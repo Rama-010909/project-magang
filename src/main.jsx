@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import pemkabLogo from './assets/pemkab-batang.png';
+import pemkabFullLogo from './assets/pemkab-batang-official.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
 import './style.css';
 
@@ -766,18 +767,17 @@ function App() {
       {/* SIDEBAR DESKTOP */}
       <aside className="sidebar">
         <div className="sidebarBrand">
-          <div className="sidebarLogos">
-            <div className="logoEmblemHolder" title="Pemerintah Kabupaten Batang">
-              <img className="logoEmblem" src={pemkabLogo} alt="Lambang Kabupaten Batang" />
-            </div>
-            <div className="logoDiskominfoHolder" title="Dinas Komunikasi dan Informatika">
-              <img className="logoDiskominfo" src={diskominfoLogo} alt="Diskominfo Batang" />
-            </div>
+          <div className="sidebarFullLogoCard" title="Pemerintah Kabupaten Batang">
+            <img className="sidebarFullLogoImg" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" />
           </div>
-          <div className="sidebarBrandText">
-            <span className="govSubtext">PEMKAB BATANG</span>
-            <b className="appName">IT ASSET MGMT</b>
-            <span className="deptSubtext">Diskominfo Kab. Batang</span>
+          <div className="sidebarSubBrand">
+            <div className="sidebarDiskominfoMiniHolder" title="Diskominfo Batang">
+              <img className="sidebarDiskominfoMini" src={diskominfoLogo} alt="Diskominfo Batang" />
+            </div>
+            <div className="sidebarBrandText">
+              <b className="appName">IT ASSET MGMT</b>
+              <span className="deptSubtext">Dinas Komunikasi & Informatika</span>
+            </div>
           </div>
         </div>
 
@@ -842,13 +842,14 @@ function App() {
       {/* MOBILE TOP BAR */}
       <header className="mobileTopBar">
         <div className="mobileBrand">
-          <img src={pemkabLogo} alt="Pemkab Batang" className="mobileLogo" />
-          <div>
-            <b className="mobileTitle">IT ASSET MANAGEMENT</b>
-            <span className="mobileSubtitle">Diskominfo Kab. Batang</span>
+          <div className="mobileFullLogoCard">
+            <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="mobileFullLogoImg" />
           </div>
         </div>
         <div className="mobileActions">
+          <div className="mobileDiskominfoMini">
+            <img src={diskominfoLogo} alt="Diskominfo" />
+          </div>
           <button className="mobileLogout" onClick={handleLogout} title="Keluar">
             <Icons.Logout />
           </button>
@@ -959,6 +960,7 @@ function App() {
             assets={assets}
             counts={counts}
             pemkabLogo={pemkabLogo}
+            pemkabFullLogo={pemkabFullLogo}
             diskominfoLogo={diskominfoLogo}
           />
         )}
@@ -986,7 +988,8 @@ function App() {
         {labelPrintAsset && (
           <PrintLabelModal
             asset={labelPrintAsset}
-            pemkabLogo={pemkabLogo}
+            pemkabFullLogo={pemkabFullLogo}
+            diskominfoLogo={diskominfoLogo}
             closeModal={() => setLabelPrintAsset(null)}
           />
         )}
@@ -1083,12 +1086,11 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
       <div className="loginCard">
         <div className="loginHeader">
           <div className="loginLogosRow">
-            <div className="loginLogoBox">
-              <img src={pemkabLogo} alt="Pemkab Batang" className="loginLogoImg" />
+            <div className="loginFullLogoBox" title="Pemerintah Kabupaten Batang">
+              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="loginFullLogoImg" />
             </div>
-            <div className="loginLogoDivider" />
-            <div className="loginLogoBox diskominfoBox">
-              <img src={diskominfoLogo} alt="Diskominfo Batang" className="loginLogoImg" />
+            <div className="loginDiskominfoBox" title="Dinas Komunikasi dan Informatika">
+              <img src={diskominfoLogo} alt="Diskominfo Batang" className="loginDiskominfoImg" />
             </div>
           </div>
 
@@ -1210,14 +1212,20 @@ function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
         </div>
 
         <div className="welcomeGovBadge">
-          <div className="govBadgeCard">
-            <img src={pemkabLogo} alt="Emblem Kab. Batang" className="govCardEmblem" />
-            <div className="govCardInfo">
-              <b>KABUPATEN BATANG</b>
-              <span>Dinas Kominfo</span>
-              <span className="liveIndicator">
-                <span className="liveDot" /> Sistem Aktif
-              </span>
+          <div className="govBadgeCard fullLogoCard">
+            <div className="govFullLogoWrap" title="Pemerintah Kabupaten Batang">
+              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="govFullLogoImg" />
+            </div>
+            <div className="govCardSub">
+              <div className="govDiskominfoWrap" title="Dinas Komunikasi dan Informatika">
+                <img src={diskominfoLogo} alt="Diskominfo" className="govDiskominfoMini" />
+              </div>
+              <div className="govCardInfo">
+                <b>DISKOMINFO KAB. BATANG</b>
+                <span className="liveIndicator">
+                  <span className="liveDot" /> Sistem Beroperasi Normal
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -2357,7 +2365,7 @@ function DetailModal({ asset, maintList, closeModal, onEdit, onDelete, addMainte
 // ==========================================
 // MODAL CETAK STIKER LABEL ASET (PRINT LABEL)
 // ==========================================
-function PrintLabelModal({ asset, pemkabLogo, closeModal }) {
+function PrintLabelModal({ asset, pemkabFullLogo, diskominfoLogo, closeModal }) {
   function doPrint() {
     window.print();
   }
@@ -2378,12 +2386,8 @@ function PrintLabelModal({ asset, pemkabLogo, closeModal }) {
         <div className="labelPrintPreview">
           <div className="physicalLabelSticker">
             <div className="labelStickerHeader">
-              <img src={pemkabLogo} alt="" className="labelPemkabLogo" />
-              <div className="labelHeaderText">
-                <b>PEMERINTAH KABUPATEN BATANG</b>
-                <span>DINAS KOMUNIKASI DAN INFORMATIKA</span>
-                <span className="labelSub">BARANG MILIK DAERAH (BMD)</span>
-              </div>
+              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="labelPemkabFullLogo" />
+              <img src={diskominfoLogo} alt="Diskominfo Batang" className="labelDiskominfoMini" />
             </div>
 
             <div className="labelStickerBody">
@@ -2652,7 +2656,7 @@ function MaintenanceView({
 // ==========================================
 // KOMPONEN LAPORAN & REKAP (PRINT KOP SURAT)
 // ==========================================
-function ReportsView({ assets, counts, pemkabLogo, diskominfoLogo }) {
+function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLogo }) {
   const [reportFilter, setReportFilter] = useState('Semua');
 
   const filtered = useMemo(() => {
