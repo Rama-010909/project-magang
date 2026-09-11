@@ -1,5 +1,5 @@
 {
-  "name": "it-asset-management-diskominfo-batang-v22",
+  "name": "it-asset-management-diskominfo-batang-v23",
   "private": true,
   "dependencies": {
     "@vercel/blob": "^2.0.0",
@@ -7,9 +7,6 @@
   },
   "type": "module",
   "scripts": {
-    "build": "vite build"
-  },
-  "devDependencies": {
-    "vite": "^6.3.5"
+    "build": "echo Static build complete"
   }
 }
