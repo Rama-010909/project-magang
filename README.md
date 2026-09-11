@@ -1,30 +1,36 @@
-# IT Asset Management Diskominfo Batang
+# IT Asset Management Diskominfo Kabupaten Batang — V15
 
-Versi ini menggunakan login admin tanpa Firebase Authentication.
+Versi online: **Firestore untuk data** + **Vercel Blob untuk foto**.
+Tidak perlu menjalankan `npm install` atau `npm run` di laptop untuk mengedit project. Saat deploy ke Vercel, Vercel akan memasang dependency server API secara otomatis.
 
-## Login
-- Username: `admin`
-- Password: `kominfobatang`
+## 1. Firebase / Firestore
+1. Buka Firebase Console dan project yang sudah dibuat.
+2. Buat/aktifkan Firestore Database.
+3. Tambahkan Web App lalu salin konfigurasi ke `firebase-config.js`.
+4. Gunakan rules pada `firestore.rules` untuk demo ini.
 
-Kredensial diverifikasi di endpoint server `/api/login`, bukan di frontend.
-Session menggunakan HttpOnly + Secure cookie.
+> Rules ini cocok untuk project/demo tanpa Firebase Authentication, tetapi **bukan aturan production** karena siapa pun yang mengetahui project ID dapat mencoba menulis ke Firestore. Untuk production, tambahkan Authentication/custom backend.
 
-## Environment Variables Vercel
-Wajib diisi:
-- `SESSION_SECRET` (minimal 32 karakter)
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
-- `BLOB_READ_WRITE_TOKEN` jika fitur upload foto digunakan
+Collection yang dipakai:
+- `assets`
+- `maintenance`
 
-Jangan memasukkan file service account atau token rahasia ke GitHub.
+Data contoh otomatis dibuat sekali jika collection `assets` masih kosong.
 
-## Deploy
-Vercel akan menjalankan `npm install` dan `npm run build` otomatis.
-Build command: `npm run build`
-Output directory: `dist`
+## 2. Vercel Blob
+Di Vercel Project → Settings → Environment Variables tambahkan:
+- `BLOB_READ_WRITE_TOKEN` = token Read/Write dari Vercel Blob Store
 
+API upload berada di `/api/upload` dan foto disimpan pada prefix `asset/`.
 
-## Fitur Keamanan Admin
-- Menu **Keamanan Akun** tersedia di sidebar dan mobile.
-- Password dapat diubah setelah login.
-- Jika belum pernah diubah, login menggunakan `admin / kominfobatang` (server-side).
-- Firebase Authentication tidak digunakan.
+## 3. Deploy
+Upload folder project ini ke GitHub lalu Import ke Vercel. Vercel otomatis memasang dependency API. Tidak perlu menjalankan npm di laptop.
+
+## Login demo
+Username: `admin`
+Password: `kominfobatang`
+
+## Catatan
+- Data aset dan maintenance tersimpan online di Firestore.
+- URL foto tersimpan di Firestore, file foto tersimpan di Vercel Blob.
+- Data tidak lagi bergantung pada localStorage sebagai penyimpanan utama.

@@ -1,18 +1,43 @@
-import { put } from '@vercel/blob';
-import { requireSession } from './lib/auth.js';
+import { put, del } from '@vercel/blob';
+import Busboy from 'busboy';
+
+export const config = { api: { bodyParser: false } };
+
+function parseMultipart(req) {
+  return new Promise((resolve, reject) => {
+    const bb = Busboy({ headers: req.headers });
+    let fileBuffer = null, filename = 'asset', mime = 'application/octet-stream';
+    bb.on('file', (_name, file, info) => {
+      filename = info.filename || 'asset';
+      mime = info.mimeType || mime;
+      const chunks = [];
+      file.on('data', c => chunks.push(c));
+      file.on('end', () => { fileBuffer = Buffer.concat(chunks); });
+    });
+    bb.on('finish', () => resolve({ fileBuffer, filename, mime }));
+    bb.on('error', reject);
+    req.pipe(bb);
+  });
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Method not allowed' }); }
-  if (!requireSession(req, res)) return;
   try {
-    if (!process.env.BLOB_READ_WRITE_TOKEN) return res.status(500).json({ error: 'Blob storage belum dikonfigurasi.' });
-    const type = req.headers['content-type'] || '';
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowed.includes(type)) return res.status(415).json({ error: 'Format foto harus JPG, PNG, atau WebP.' });
-    const size = Number(req.headers['content-length'] || 0);
-    if (size > 8 * 1024 * 1024) return res.status(413).json({ error: 'Ukuran foto maksimal 8 MB.' });
-    const ext = type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
-    const blob = await put(`assets/${crypto.randomUUID()}.${ext}`, req, { access: 'public', contentType: type, addRandomSuffix: false });
-    return res.json({ url: blob.url });
-  } catch (e) { console.error(e); return res.status(500).json({ error: 'Upload gagal.' }); }
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN belum diatur di Vercel.' });
+    if (req.method === 'DELETE') {
+      const url = String(req.query.url || '');
+      if (url) await del(url);
+      return res.status(200).json({ ok: true });
+    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method tidak diizinkan.' });
+    const { fileBuffer, filename, mime } = await parseMultipart(req);
+    if (!fileBuffer?.length) return res.status(400).json({ error: 'File foto tidak ditemukan.' });
+    if (!mime.startsWith('image/')) return res.status(400).json({ error: 'File harus berupa gambar.' });
+    if (fileBuffer.length > 8 * 1024 * 1024) return res.status(400).json({ error: 'Ukuran foto maksimal 8 MB.' });
+    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const blob = await put(`asset/${Date.now()}-${safe}`, fileBuffer, { access: 'public', contentType: mime, token: process.env.BLOB_READ_WRITE_TOKEN });
+    return res.status(200).json({ url: blob.url });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: e.message || 'Upload gagal.' });
+  }
 }
