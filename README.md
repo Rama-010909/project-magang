@@ -1,13 +1,16 @@
-# IT Asset Management Diskominfo Batang
+# IT Asset Management — Diskominfo Kabupaten Batang
 
-Versi deploy-ready. Desain aplikasi dipertahankan.
+Versi ini mengembalikan desain/UI dari project pertama yang dikirim, sambil mempertahankan koneksi Firestore dan endpoint Vercel Blob.
 
-## Deploy ke Vercel
-- Framework: Other
-- Build Command: kosong
-- Output Directory: kosong
-- Vercel akan otomatis mendeteksi `api/upload.js` sebagai Function.
-- Tambahkan environment variable `BLOB_READ_WRITE_TOKEN` untuk upload foto.
-- Isi `firebase-config.js` dengan config Web App Firebase.
+## Login demo
+Username: `admin`
+Password: `kominfobatang`
 
-Tidak perlu `vercel.json` runtime khusus.
+## Deploy Vercel
+- Framework: Vite (terdeteksi otomatis)
+- Build Command: kosong / default Vercel
+- Output Directory: kosong / default Vite (`dist`)
+- Jangan menambahkan runtime function manual.
+- Tambahkan `BLOB_READ_WRITE_TOKEN` di Environment Variables untuk upload foto.
+
+Firebase Web App config sudah diletakkan di `src/firebase.js`.
