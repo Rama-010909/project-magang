@@ -1,7 +1,14 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /assets/{id} { allow read, write: if true; }
-    match /maintenance/{id} { allow read, write: if true; }
+    // Mode demo/project: aplikasi memakai login demo sendiri,
+    // bukan Firebase Authentication.
+    match /assets/{document=**} {
+      allow read, write: if true;
+    }
+    match /maintenance/{document=**} {
+      allow read, write: if true;
+    }
   }
 }

@@ -1,8 +1,9 @@
 {
-  "name": "it-asset-management-diskominfo-batang-v15",
+  "name": "it-asset-management-diskominfo-batang-v19",
   "private": true,
   "dependencies": {
     "@vercel/blob": "^2.0.0",
     "busboy": "^1.6.0"
-  }
+  },
+  "type": "module"
 }

@@ -1,10 +1,9 @@
-// Isi dengan konfigurasi Web App Firebase milikmu.
-// Firebase Console -> Project settings -> Your apps -> Web app -> Config.
 window.BTG_FIREBASE_CONFIG = {
-  apiKey: 'ISI_API_KEY',
-  authDomain: 'ISI_PROJECT_ID.firebaseapp.com',
-  projectId: 'ISI_PROJECT_ID',
-  storageBucket: 'ISI_PROJECT_ID.firebasestorage.app',
-  messagingSenderId: 'ISI_MESSAGING_SENDER_ID',
-  appId: 'ISI_APP_ID'
+  apiKey: "AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo",
+  authDomain: "it-asset-diskominfo-batang.firebaseapp.com",
+  databaseURL: "https://it-asset-diskominfo-batang-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "it-asset-diskominfo-batang",
+  storageBucket: "it-asset-diskominfo-batang.firebasestorage.app",
+  messagingSenderId: "1083945766646",
+  appId: "1:1083945766646:web:0fbd3b32f88fd34784a6d7"
 };
