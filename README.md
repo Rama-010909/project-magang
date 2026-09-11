@@ -1,6 +1,13 @@
-# IT Asset Management Diskominfo Batang — V20
+# IT Asset Management Diskominfo Batang
 
-Versi bersih dan deployable. Tidak memakai service worker/cache. JavaScript aplikasi dipisahkan ke app.js. Struktur deploy langsung dari root folder.
+Versi deploy-ready. Desain aplikasi dipertahankan.
 
-Login demo: admin / kominfobatang
-Data aset & maintenance: Firestore. Foto: Vercel Blob melalui /api/upload.
+## Deploy ke Vercel
+- Framework: Other
+- Build Command: kosong
+- Output Directory: kosong
+- Vercel akan otomatis mendeteksi `api/upload.js` sebagai Function.
+- Tambahkan environment variable `BLOB_READ_WRITE_TOKEN` untuk upload foto.
+- Isi `firebase-config.js` dengan config Web App Firebase.
+
+Tidak perlu `vercel.json` runtime khusus.
