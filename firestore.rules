@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Semua akses aplikasi dilakukan melalui Vercel API + Firebase Admin SDK.
+    // Firebase Admin SDK tidak terpengaruh rules ini.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

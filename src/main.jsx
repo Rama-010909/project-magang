@@ -1,21 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QRCodeSVG } from 'qrcode.react';
-import {
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  serverTimestamp,
-  query,
-  orderBy,
-  updateDoc
-} from 'firebase/firestore';
-import { db } from './firebase';
 import pemkabLogo from './assets/pemkab-batang.png';
 import pemkabFullLogo from './assets/pemkab-batang-official.png';
-import diskominfoLogo from './assets/diskominfo-batang.jpg';
+import diskominfoLogo from './assets/diskominfo-batang-hd.jpg';
 import './style.css';
 
 // ==========================================
@@ -380,17 +368,67 @@ const Icons = {
   )
 };
 
+
+// ==========================================
+// PRATINJAU LOGO & UTILITAS LOKASI
+// ==========================================
+function LogoViewer({ src, alt, className, wrapperClassName = '' }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`logoViewerTrigger ${wrapperClassName}`}
+        onClick={() => setOpen(true)}
+        title={`Lihat ${alt} lebih besar`}
+        aria-label={`Lihat ${alt} lebih besar`}
+      >
+        <img src={src} alt={alt} className={className} />
+      </button>
+
+      {open && (
+        <div className="logoPreviewOverlay" onMouseDown={e => e.target === e.currentTarget && setOpen(false)}>
+          <div className="logoPreviewCard">
+            <button type="button" className="logoPreviewClose" onClick={() => setOpen(false)} aria-label="Tutup">
+              ×
+            </button>
+            <div className="logoPreviewImageWrap">
+              <img src={src} alt={alt} className="logoPreviewImage" />
+            </div>
+            <div className="logoPreviewCaption">{alt}</div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function googleMapsUrl(location) {
+  const query = `${location || ''}, Kabupaten Batang, Jawa Tengah`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
 // ==========================================
 // APLIKASI UTAMA (APP)
 // ==========================================
 function App() {
-  // Authentication
-  const [login, setLogin] = useState(() => {
-    return sessionStorage.getItem('it_asset_auth') === 'true';
-  });
+  // Authentication melalui Vercel API + HttpOnly session cookie.
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const [username, setUsername] = useState('');
   const [pass, setPass] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const login = Boolean(user);
+
+  useEffect(() => {
+    fetch('/api/session', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => setUser(data.authenticated ? { username: data.username } : null))
+      .catch(() => setUser(null))
+      .finally(() => setAuthReady(true));
+  }, []);
 
   // Navigation
   const [page, setPage] = useState('dashboard');
@@ -398,23 +436,8 @@ function App() {
   const [labelPrintAsset, setLabelPrintAsset] = useState(null);
 
   // Data state (Hybrid Firebase & LocalStorage)
-  const [assets, setAssets] = useState(() => {
-    try {
-      const cached = localStorage.getItem('it_assets_list');
-      return cached ? JSON.parse(cached) : INITIAL_ASSETS;
-    } catch {
-      return INITIAL_ASSETS;
-    }
-  });
-
-  const [maint, setMaint] = useState(() => {
-    try {
-      const cached = localStorage.getItem('it_maint_list');
-      return cached ? JSON.parse(cached) : INITIAL_MAINT;
-    } catch {
-      return INITIAL_MAINT;
-    }
-  });
+  const [assets, setAssets] = useState([]);
+  const [maint, setMaint] = useState([]);
 
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [firebaseChecked, setFirebaseChecked] = useState(false);
@@ -455,73 +478,30 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Simpan ke LocalStorage sebagai backup otomatis
+  // Data dibaca melalui API server yang sudah dilindungi session.
   useEffect(() => {
-    try {
-      localStorage.setItem('it_assets_list', JSON.stringify(assets));
-    } catch (e) {
-      console.warn('LocalStorage save error', e);
-    }
-  }, [assets]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('it_maint_list', JSON.stringify(maint));
-    } catch (e) {
-      console.warn('LocalStorage save error', e);
-    }
-  }, [maint]);
-
-  // Inisialisasi Firebase jika env valid
-  useEffect(() => {
-    const hasKey = Boolean(import.meta.env.VITE_FIREBASE_API_KEY);
-    if (!hasKey) {
+    if (!user) {
+      setAssets([]);
+      setMaint([]);
       setIsFirebaseConnected(false);
-      setFirebaseChecked(true);
+      setFirebaseChecked(authReady);
       return;
     }
-
-    try {
-      const qAssets = query(collection(db, 'assets'), orderBy('createdAt', 'desc'));
-      const unsubAssets = onSnapshot(
-        qAssets,
-        snapshot => {
-          if (!snapshot.empty) {
-            setAssets(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-          }
-          setIsFirebaseConnected(true);
-          setFirebaseChecked(true);
-        },
-        err => {
-          console.info('Firebase Firestore assets offline or restricted, fallback to local storage:', err.message);
-          setIsFirebaseConnected(false);
-          setFirebaseChecked(true);
-        }
-      );
-
-      const qMaint = query(collection(db, 'maintenance'), orderBy('tanggal', 'desc'));
-      const unsubMaint = onSnapshot(
-        qMaint,
-        snapshot => {
-          if (!snapshot.empty) {
-            setMaint(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-          }
-        },
-        err => {
-          console.info('Firebase Firestore maint offline:', err.message);
-        }
-      );
-
-      return () => {
-        unsubAssets();
-        unsubMaint();
-      };
-    } catch (e) {
-      console.warn('Firebase init fallback:', e.message);
-      setIsFirebaseConnected(false);
-      setFirebaseChecked(true);
-    }
-  }, []);
+    setFirebaseChecked(false);
+    Promise.all([fetch('/api/assets', { credentials: 'same-origin' }), fetch('/api/maintenance', { credentials: 'same-origin' })])
+      .then(async ([a, m]) => {
+        if (!a.ok || !m.ok) throw new Error('Gagal mengambil data server.');
+        const [assetsData, maintData] = await Promise.all([a.json(), m.json()]);
+        setAssets(assetsData);
+        setMaint(maintData);
+        setIsFirebaseConnected(true);
+      })
+      .catch(err => {
+        console.error('Data API error:', err);
+        setIsFirebaseConnected(false);
+      })
+      .finally(() => setFirebaseChecked(true));
+  }, [user, authReady]);
 
   // Hash URL sync (#asset=id)
   useEffect(() => {
@@ -603,24 +583,13 @@ function App() {
         updatedAt: new Date().toISOString()
       };
 
-      if (isFirebaseConnected) {
-        try {
-          if (editing) {
-            await updateDoc(doc(db, 'assets', editing), { ...payload, updatedAt: serverTimestamp() });
-          } else {
-            const docRef = await addDoc(collection(db, 'assets'), {
-              ...payload,
-              createdAt: serverTimestamp()
-            });
-            payload.id = docRef.id;
-          }
-        } catch (err) {
-          console.warn('Fallback ke local state:', err.message);
-          updateLocalAssets(payload);
-        }
-      } else {
-        updateLocalAssets(payload);
-      }
+      const response = await fetch('/api/assets' + (editing ? `?id=${encodeURIComponent(editing)}` : ''), {
+        method: editing ? 'PATCH' : 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editing ? { id: editing, ...payload } : payload)
+      });
+      if (!response.ok) throw new Error((await response.json()).error || 'Gagal menyimpan data.');
 
       setToast(editing ? 'Data perangkat berhasil diperbarui' : 'Perangkat baru berhasil ditambahkan');
       setForm(EMPTY_FORM);
@@ -633,30 +602,14 @@ function App() {
     }
   }
 
-  function updateLocalAssets(payload) {
-    if (editing) {
-      setAssets(prev => prev.map(a => (a.id === editing ? { ...a, ...payload } : a)));
-    } else {
-      const newId = 'ast-' + Date.now().toString(36);
-      const newRecord = { ...payload, id: newId, createdAt: new Date().toISOString() };
-      setAssets(prev => [newRecord, ...prev]);
-    }
-  }
-
   // Hapus Aset
   async function removeAsset(id) {
     const target = assets.find(a => a.id === id);
     if (!confirm(`Hapus perangkat "${target?.nama || id}"? Data yang dihapus tidak dapat dikembalikan.`)) return;
 
     try {
-      if (isFirebaseConnected) {
-        try {
-          await deleteDoc(doc(db, 'assets', id));
-        } catch (err) {
-          console.warn('Firebase delete error, removing locally:', err.message);
-        }
-      }
-      setAssets(prev => prev.filter(a => a.id !== id));
+      const response = await fetch(`/api/assets?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
+      if (!response.ok) throw new Error((await response.json()).error || 'Database belum terhubung.');
       setMaint(prev => prev.filter(m => m.assetId !== id));
       if (selected?.id === id) setSelected(null);
       setToast('Perangkat berhasil dihapus dari inventaris');
@@ -675,23 +628,13 @@ function App() {
         createdAt: new Date().toISOString()
       };
 
-      if (isFirebaseConnected) {
-        try {
-          await addDoc(collection(db, 'maintenance'), {
-            ...record,
-            assetId: targetAssetId,
-            createdAt: serverTimestamp()
-          });
-          if (newStatus) {
-            await updateDoc(doc(db, 'assets', targetAssetId), {
-              status: newStatus,
-              updatedAt: serverTimestamp()
-            });
-          }
-        } catch (err) {
-          console.warn('Firebase maint fallback:', err.message);
-        }
-      }
+      const response = await fetch('/api/maintenance', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record, assetId: targetAssetId, newStatus })
+      });
+      if (!response.ok) throw new Error((await response.json()).error || 'Database belum terhubung.');
 
       setMaint(prev => [newMaint, ...prev]);
 
@@ -714,13 +657,8 @@ function App() {
   async function removeMaintenanceRecord(id) {
     if (!confirm('Hapus riwayat maintenance ini?')) return;
     try {
-      if (isFirebaseConnected) {
-        try {
-          await deleteDoc(doc(db, 'maintenance', id));
-        } catch (e) {
-          console.warn('Firebase delete error:', e.message);
-        }
-      }
+      const response = await fetch(`/api/maintenance?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
+      if (!response.ok) throw new Error((await response.json()).error || 'Database belum terhubung.');
       setMaint(prev => prev.filter(m => m.id !== id));
       setToast('Riwayat pemeliharaan berhasil dihapus');
     } catch (e) {
@@ -728,24 +666,37 @@ function App() {
     }
   }
 
-  // Sesi Login / Logout
-  function handleLogin(e) {
-    if (e) e.preventDefault();
-    if (username.trim() === 'admin' && pass === 'kominfobatang') {
-      sessionStorage.setItem('it_asset_auth', 'true');
-      setLogin(true);
+  // Login/Logout melalui backend; password tidak pernah dikirim ke Firestore atau disimpan di browser.
+  async function handleLogin(e) {
+    e?.preventDefault();
+    setLoginError('');
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password: pass })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Login gagal.');
+      setUser({ username: data.username });
       setUsername('');
       setPass('');
-    } else {
-      alert('Username atau password salah! Gunakan username "admin" dan password "kominfobatang".');
+    } catch (error) {
+      console.error('Login gagal:', error);
+      setLoginError(error.message);
     }
   }
 
-  function handleLogout() {
-    if (confirm('Apakah Anda yakin ingin keluar dari sistem?')) {
-      sessionStorage.removeItem('it_asset_auth');
-      setLogin(false);
-    }
+  async function handleLogout() {
+    if (!confirm('Apakah Anda yakin ingin keluar dari sistem?')) return;
+    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+    setUser(null);
+    setLoginError('');
+  }
+
+  if (!authReady) {
+    return <div className="loginContainer"><div className="loginCard"><div className="loginHeader"><h1 className="loginTitle">Memeriksa keamanan...</h1><p className="loginSubtitle">Menghubungkan sesi autentikasi.</p></div></div></div>;
   }
 
   if (!login) {
@@ -758,6 +709,7 @@ function App() {
         showPass={showPass}
         setShowPass={setShowPass}
         onLogin={handleLogin}
+        loginError={loginError}
       />
     );
   }
@@ -768,11 +720,11 @@ function App() {
       <aside className="sidebar">
         <div className="sidebarBrand">
           <div className="sidebarFullLogoCard" title="Pemerintah Kabupaten Batang">
-            <img className="sidebarFullLogoImg" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" />
+            <LogoViewer wrapperClassName="sidebarFullLogoCard" className="sidebarFullLogoImg" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" />
           </div>
           <div className="sidebarSubBrand">
             <div className="sidebarDiskominfoMiniHolder" title="Diskominfo Batang">
-              <img className="sidebarDiskominfoMini" src={diskominfoLogo} alt="Diskominfo Batang" />
+              <LogoViewer wrapperClassName="sidebarDiskominfoMiniHolder" className="sidebarDiskominfoMini" src={diskominfoLogo} alt="Diskominfo Batang" />
             </div>
             <div className="sidebarBrandText">
               <b className="appName">IT ASSET MGMT</b>
@@ -822,6 +774,7 @@ function App() {
             <span className="navIcon"><Icons.FileText /></span>
             <span className="navLabel">Laporan & Rekap</span>
           </button>
+
         </nav>
 
         <div className="sidebarFooter">
@@ -843,12 +796,12 @@ function App() {
       <header className="mobileTopBar">
         <div className="mobileBrand">
           <div className="mobileFullLogoCard">
-            <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="mobileFullLogoImg" />
+            <LogoViewer wrapperClassName="mobileFullLogoCard" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="mobileFullLogoImg" />
           </div>
         </div>
         <div className="mobileActions">
           <div className="mobileDiskominfoMini">
-            <img src={diskominfoLogo} alt="Diskominfo" />
+            <LogoViewer wrapperClassName="mobileDiskominfoMini" src={diskominfoLogo} alt="Diskominfo Batang" />
           </div>
           <button className="mobileLogout" onClick={handleLogout} title="Keluar">
             <Icons.Logout />
@@ -1073,10 +1026,11 @@ function ConditionChip({ condition }) {
   return <span className={`conditionChip ${cls}`}>{c}</span>;
 }
 
+
 // ==========================================
 // KOMPONEN LOGIN
 // ==========================================
-function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass, onLogin }) {
+function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass, onLogin, loginError }) {
   return (
     <div className="loginContainer">
       <div className="loginPatternBg" />
@@ -1087,10 +1041,10 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
         <div className="loginHeader">
           <div className="loginLogosRow">
             <div className="loginFullLogoBox" title="Pemerintah Kabupaten Batang">
-              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="loginFullLogoImg" />
+              <LogoViewer wrapperClassName="loginFullLogoBox" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="loginFullLogoImg" />
             </div>
             <div className="loginDiskominfoBox" title="Dinas Komunikasi dan Informatika">
-              <img src={diskominfoLogo} alt="Diskominfo Batang" className="loginDiskominfoImg" />
+              <LogoViewer wrapperClassName="loginDiskominfoBox" src={diskominfoLogo} alt="Diskominfo Batang" className="loginDiskominfoImg" />
             </div>
           </div>
 
@@ -1103,11 +1057,11 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
 
         <form className="loginForm" onSubmit={onLogin}>
           <label className="inputGroup">
-            <span className="inputLabel">Username Petugas</span>
+            <span className="inputLabel">Email Petugas</span>
             <div className="inputFieldWrap">
               <input
-                type="text"
-                placeholder="Masukkan username"
+                type="email"
+                placeholder="Masukkan email petugas"
                 autoComplete="username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
@@ -1138,6 +1092,8 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
             </div>
           </label>
 
+          {loginError && <div className="loginError" role="alert">{loginError}</div>}
+
           <button type="submit" className="btnPrimary loginSubmitBtn">
             <span>Masuk ke Sistem</span>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1146,20 +1102,81 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
           </button>
         </form>
 
-        <div className="loginHelper">
-          <p>
-            Akun Default Administrator:
-            <br />
-            Username: <code>admin</code> • Password: <code>kominfobatang</code>
-          </p>
-        </div>
-
         <div className="loginFooter">
           <span>Hak Cipta © 2026 Pemerintah Kabupaten Batang</span>
           <span>Dinas Komunikasi dan Informatika</span>
         </div>
       </div>
     </div>
+  );
+}
+
+
+// ==========================================
+// MONITORING CERDAS (PONDASI AI)
+// ==========================================
+function SmartMonitoringPanel({ assets, maint }) {
+  const issues = useMemo(() => {
+    return assets.map(asset => {
+      const reasons = [];
+      if (asset.status === 'Rusak' || asset.kondisi === 'Rusak') reasons.push('status/kondisi rusak');
+      if (asset.status === 'Maintenance') reasons.push('sedang maintenance');
+      if (!asset.ipAddress && ['Router', 'Switch', 'Server', 'Access Point', 'CCTV', 'NVR / DVR'].includes(asset.kategori)) {
+        reasons.push('IP belum terdaftar');
+      }
+      const maintenanceCount = maint.filter(m => m.assetId === asset.id).length;
+      if (maintenanceCount >= 2) reasons.push('riwayat maintenance berulang');
+      return reasons.length ? { asset, reasons } : null;
+    }).filter(Boolean);
+  }, [assets, maint]);
+
+  const critical = issues.filter(x => x.asset.status === 'Rusak' || x.asset.kondisi === 'Rusak').length;
+
+  return (
+    <section className="smartMonitorPanel">
+      <div className="smartMonitorHeader">
+        <div>
+          <span className="smartMonitorEyebrow">MONITORING CERDAS</span>
+          <h2 className="panelTitle">Deteksi Perangkat Bermasalah</h2>
+          <p className="panelSubtitle">
+            Pemeriksaan otomatis dari status, kondisi, jaringan, dan riwayat maintenance.
+          </p>
+        </div>
+        <div className={`smartHealthBadge ${issues.length ? 'warning' : 'healthy'}`}>
+          <span className="smartHealthDot" />
+          {issues.length ? `${issues.length} perlu diperiksa` : 'Semua terpantau'}
+        </div>
+      </div>
+
+      {issues.length ? (
+        <div className="smartIssueList">
+          {issues.slice(0, 5).map(({ asset, reasons }) => (
+            <div className="smartIssueRow" key={asset.id}>
+              <div className="smartIssueMain">
+                <div className="smartIssueIcon"><Icons.Wrench /></div>
+                <div>
+                  <b>{asset.nama}</b>
+                  <span>{asset.lokasi || 'Lokasi belum diisi'}</span>
+                </div>
+              </div>
+              <div className="smartReasonList">
+                {reasons.map(reason => <span key={reason}>{reason}</span>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="smartEmptyState">
+          <Icons.Check />
+          <span>Tidak ada indikator gangguan dari data inventaris saat ini.</span>
+        </div>
+      )}
+
+      <div className="smartMonitorFooter">
+        <span><b>{critical}</b> aset berstatus/kondisi rusak</span>
+        <span className="smartFutureNote">AI diagnosis + monitoring jaringan dapat dihubungkan ke agent/SNMP di tahap berikutnya.</span>
+      </div>
+    </section>
   );
 }
 
@@ -1180,6 +1197,7 @@ function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
 
   return (
     <div className="dashboardContainer">
+      <SmartMonitoringPanel assets={assets} maint={maint} />
       {/* BANNER UTAMA */}
       <section className="welcomeBanner">
         <div className="welcomeContent">
@@ -1214,11 +1232,11 @@ function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
         <div className="welcomeGovBadge">
           <div className="govBadgeCard fullLogoCard">
             <div className="govFullLogoWrap" title="Pemerintah Kabupaten Batang">
-              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="govFullLogoImg" />
+              <LogoViewer wrapperClassName="govFullLogoWrap" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="govFullLogoImg" />
             </div>
             <div className="govCardSub">
               <div className="govDiskominfoWrap" title="Dinas Komunikasi dan Informatika">
-                <img src={diskominfoLogo} alt="Diskominfo" className="govDiskominfoMini" />
+                <LogoViewer wrapperClassName="govDiskominfoWrap" src={diskominfoLogo} alt="Diskominfo Batang" className="govDiskominfoMini" />
               </div>
               <div className="govCardInfo">
                 <b>DISKOMINFO KAB. BATANG</b>
@@ -1741,6 +1759,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
       try {
         const res = await fetch('/api/upload', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'content-type': file.type },
           body: file
         });
@@ -2104,8 +2123,22 @@ function DetailModal({ asset, maintList, closeModal, onEdit, onDelete, addMainte
                 <div className="specQuickCards">
                   <div className="quickCard">
                     <span className="qKey">Lokasi Penempatan</span>
-                    <b className="qVal">
-                      <Icons.MapPin /> {asset.lokasi || 'Belum Ditentukan'}
+                    <b className="qVal locationValue">
+                      <Icons.MapPin />
+                      {asset.lokasi ? (
+                        <>
+                          <span>{asset.lokasi}</span>
+                          <a
+                            className="mapLink"
+                            href={googleMapsUrl(asset.lokasi)}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            Buka Google Maps
+                          </a>
+                        </>
+                      ) : 'Belum Ditentukan'}
                     </b>
                   </div>
                   <div className="quickCard">
@@ -2386,8 +2419,8 @@ function PrintLabelModal({ asset, pemkabFullLogo, diskominfoLogo, closeModal }) 
         <div className="labelPrintPreview">
           <div className="physicalLabelSticker">
             <div className="labelStickerHeader">
-              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="labelPemkabFullLogo" />
-              <img src={diskominfoLogo} alt="Diskominfo Batang" className="labelDiskominfoMini" />
+              <LogoViewer wrapperClassName="labelPemkabFullLogoWrap" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="labelPemkabFullLogo" />
+              <LogoViewer wrapperClassName="labelDiskominfoMiniWrap" src={diskominfoLogo} alt="Diskominfo Batang" className="labelDiskominfoMini" />
             </div>
 
             <div className="labelStickerBody">
@@ -2755,7 +2788,7 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
       <div className="printableDocumentCard">
         {/* KOP SURAT RESMI */}
         <div className="officialKopSurat">
-          <img src={pemkabLogo} alt="Lambang Kabupaten Batang" className="kopEmblemBatang" />
+          <LogoViewer wrapperClassName="kopEmblemBatangWrap" src={pemkabLogo} alt="Lambang Kabupaten Batang" className="kopEmblemBatang" />
           <div className="kopHeaderText">
             <h3>PEMERINTAH KABUPATEN BATANG</h3>
             <h2>DINAS KOMUNIKASI DAN INFORMATIKA</h2>
@@ -2766,7 +2799,7 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
               Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id
             </p>
           </div>
-          <img src={diskominfoLogo} alt="Logo Diskominfo" className="kopDiskominfoLogo" />
+          <LogoViewer wrapperClassName="kopDiskominfoLogoWrap" src={diskominfoLogo} alt="Logo Diskominfo Batang" className="kopDiskominfoLogo" />
         </div>
         <div className="kopDoubleLine" />
 
@@ -2874,3 +2907,11 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
 // MOUNT ROOT
 // ==========================================
 createRoot(document.getElementById('root')).render(<App />);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => {
+      console.warn('PWA service worker belum aktif:', err.message);
+    });
+  });
+}
