@@ -1,5 +1,6 @@
-# IT Asset Management Diskominfo Batang — V19
+# IT Asset Management Diskominfo Batang — V20
 
-Perbaikan: JavaScript dipindahkan ke app.js untuk menghindari HTML parser/raw-text issue dan service worker lama dinonaktifkan agar Live Server tidak menampilkan kode JavaScript yang ter-cache.
+Versi bersih dan deployable. Tidak memakai service worker/cache. JavaScript aplikasi dipisahkan ke app.js. Struktur deploy langsung dari root folder.
 
-Jalankan `index.html` dengan Live Server. Firebase config ada di `firebase-config.js`. Upload foto membutuhkan deploy Vercel + Vercel Blob.
+Login demo: admin / kominfobatang
+Data aset & maintenance: Firestore. Foto: Vercel Blob melalui /api/upload.
