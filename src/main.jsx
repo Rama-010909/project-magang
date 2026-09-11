@@ -8,9 +8,9 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
-  query,
-  orderBy,
-  updateDoc
+  updateDoc,
+  getDocs,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
 import pemkabLogo from './assets/pemkab-batang.png';
@@ -381,6 +381,42 @@ const Icons = {
 };
 
 // ==========================================
+// HELPER UI — LOGO PREVIEW & GOOGLE MAPS
+// ==========================================
+function mapsUrl(location) {
+  return location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}` : '#';
+}
+
+function MapsLink({ location, children }) {
+  if (!location) return <>{children || 'Lokasi belum diisi'}</>;
+  return (
+    <a className="mapsLink" href={mapsUrl(location)} target="_blank" rel="noreferrer" title="Buka lokasi di Google Maps">
+      {children || location}
+    </a>
+  );
+}
+
+function ClickableLogo({ src, alt, className, wrapperClassName = '' }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className={`clickableLogo ${wrapperClassName}`} onClick={() => setOpen(true)} title={`Lihat ${alt}`}>
+        <img src={src} alt={alt} className={className} />
+      </button>
+      {open && (
+        <div className="logoPreviewOverlay" onMouseDown={e => e.target === e.currentTarget && setOpen(false)}>
+          <div className="logoPreviewCard">
+            <button type="button" className="logoPreviewClose" onClick={() => setOpen(false)} aria-label="Tutup">×</button>
+            <img src={src} alt={alt} className="logoPreviewImage" />
+            <b>{alt}</b>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ==========================================
 // APLIKASI UTAMA (APP)
 // ==========================================
 function App() {
@@ -397,24 +433,9 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [labelPrintAsset, setLabelPrintAsset] = useState(null);
 
-  // Data state (Hybrid Firebase & LocalStorage)
-  const [assets, setAssets] = useState(() => {
-    try {
-      const cached = localStorage.getItem('it_assets_list');
-      return cached ? JSON.parse(cached) : INITIAL_ASSETS;
-    } catch {
-      return INITIAL_ASSETS;
-    }
-  });
-
-  const [maint, setMaint] = useState(() => {
-    try {
-      const cached = localStorage.getItem('it_maint_list');
-      return cached ? JSON.parse(cached) : INITIAL_MAINT;
-    } catch {
-      return INITIAL_MAINT;
-    }
-  });
+  // Data state — Firestore adalah sumber data utama. Tidak ada fallback localStorage.
+  const [assets, setAssets] = useState([]);
+  const [maint, setMaint] = useState([]);
 
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [firebaseChecked, setFirebaseChecked] = useState(false);
@@ -455,72 +476,71 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Simpan ke LocalStorage sebagai backup otomatis
+  // Sinkronisasi penuh dengan Cloud Firestore
   useEffect(() => {
-    try {
-      localStorage.setItem('it_assets_list', JSON.stringify(assets));
-    } catch (e) {
-      console.warn('LocalStorage save error', e);
-    }
-  }, [assets]);
+    let unsubAssets = () => {};
+    let unsubMaint = () => {};
+    let cancelled = false;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('it_maint_list', JSON.stringify(maint));
-    } catch (e) {
-      console.warn('LocalStorage save error', e);
-    }
-  }, [maint]);
-
-  // Inisialisasi Firebase jika env valid
-  useEffect(() => {
-    const hasKey = Boolean(import.meta.env.VITE_FIREBASE_API_KEY);
-    if (!hasKey) {
-      setIsFirebaseConnected(false);
-      setFirebaseChecked(true);
-      return;
-    }
-
-    try {
-      const qAssets = query(collection(db, 'assets'), orderBy('createdAt', 'desc'));
-      const unsubAssets = onSnapshot(
-        qAssets,
-        snapshot => {
-          if (!snapshot.empty) {
-            setAssets(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-          }
-          setIsFirebaseConnected(true);
-          setFirebaseChecked(true);
-        },
-        err => {
-          console.info('Firebase Firestore assets offline or restricted, fallback to local storage:', err.message);
-          setIsFirebaseConnected(false);
-          setFirebaseChecked(true);
+    async function initFirestore() {
+      try {
+        // Jika koleksi benar-benar kosong, isi sekali dengan data contoh bawaan.
+        const assetSnap = await getDocs(collection(db, 'assets'));
+        if (assetSnap.empty) {
+          const batch = writeBatch(db);
+          INITIAL_ASSETS.forEach(item => {
+            const ref = doc(db, 'assets', item.id);
+            batch.set(ref, item);
+          });
+          INITIAL_MAINT.forEach(item => {
+            const ref = doc(db, 'maintenance', item.id);
+            batch.set(ref, item);
+          });
+          await batch.commit();
         }
-      );
 
-      const qMaint = query(collection(db, 'maintenance'), orderBy('tanggal', 'desc'));
-      const unsubMaint = onSnapshot(
-        qMaint,
-        snapshot => {
-          if (!snapshot.empty) {
-            setMaint(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        if (cancelled) return;
+
+        unsubAssets = onSnapshot(
+          collection(db, 'assets'),
+          snapshot => {
+            const rows = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+            setAssets(rows);
+            setIsFirebaseConnected(true);
+            setFirebaseChecked(true);
+          },
+          err => {
+            console.error('Firestore assets:', err);
+            setIsFirebaseConnected(false);
+            setFirebaseChecked(true);
+            setToast('Firestore tidak dapat diakses: ' + (err.message || 'periksa Rules'));
           }
-        },
-        err => {
-          console.info('Firebase Firestore maint offline:', err.message);
-        }
-      );
+        );
 
-      return () => {
-        unsubAssets();
-        unsubMaint();
-      };
-    } catch (e) {
-      console.warn('Firebase init fallback:', e.message);
-      setIsFirebaseConnected(false);
-      setFirebaseChecked(true);
+        unsubMaint = onSnapshot(
+          collection(db, 'maintenance'),
+          snapshot => {
+            const rows = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            rows.sort((a, b) => String(b.tanggal || '').localeCompare(String(a.tanggal || '')));
+            setMaint(rows);
+          },
+          err => console.error('Firestore maintenance:', err)
+        );
+      } catch (err) {
+        console.error('Firestore init:', err);
+        setIsFirebaseConnected(false);
+        setFirebaseChecked(true);
+        setToast('Gagal terhubung ke Firestore: ' + (err.message || 'periksa konfigurasi Firebase'));
+      }
     }
+
+    initFirestore();
+    return () => {
+      cancelled = true;
+      unsubAssets();
+      unsubMaint();
+    };
   }, []);
 
   // Hash URL sync (#asset=id)
@@ -593,33 +613,26 @@ function App() {
     go('form');
   }
 
-  // Simpan Aset (Hybrid Firestore & Local)
+  // Simpan Aset — selalu ke Firestore
   async function saveAsset(e) {
     e.preventDefault();
     setLoading(true);
     try {
+      if (!isFirebaseConnected) throw new Error('Firestore belum terhubung. Periksa Firebase Web App dan Rules.');
+
       const payload = {
         ...form,
-        updatedAt: new Date().toISOString()
+        updatedAt: serverTimestamp()
       };
 
-      if (isFirebaseConnected) {
-        try {
-          if (editing) {
-            await updateDoc(doc(db, 'assets', editing), { ...payload, updatedAt: serverTimestamp() });
-          } else {
-            const docRef = await addDoc(collection(db, 'assets'), {
-              ...payload,
-              createdAt: serverTimestamp()
-            });
-            payload.id = docRef.id;
-          }
-        } catch (err) {
-          console.warn('Fallback ke local state:', err.message);
-          updateLocalAssets(payload);
-        }
+      if (editing) {
+        await updateDoc(doc(db, 'assets', editing), payload);
       } else {
-        updateLocalAssets(payload);
+        const docRef = await addDoc(collection(db, 'assets'), {
+          ...payload,
+          createdAt: serverTimestamp()
+        });
+        payload.id = docRef.id;
       }
 
       setToast(editing ? 'Data perangkat berhasil diperbarui' : 'Perangkat baru berhasil ditambahkan');
@@ -627,19 +640,9 @@ function App() {
       setEditing(null);
       go('inventaris');
     } catch (err) {
-      alert('Gagal menyimpan: ' + err.message);
+      alert('Gagal menyimpan ke Firestore: ' + err.message);
     } finally {
       setLoading(false);
-    }
-  }
-
-  function updateLocalAssets(payload) {
-    if (editing) {
-      setAssets(prev => prev.map(a => (a.id === editing ? { ...a, ...payload } : a)));
-    } else {
-      const newId = 'ast-' + Date.now().toString(36);
-      const newRecord = { ...payload, id: newId, createdAt: new Date().toISOString() };
-      setAssets(prev => [newRecord, ...prev]);
     }
   }
 
@@ -649,15 +652,8 @@ function App() {
     if (!confirm(`Hapus perangkat "${target?.nama || id}"? Data yang dihapus tidak dapat dikembalikan.`)) return;
 
     try {
-      if (isFirebaseConnected) {
-        try {
-          await deleteDoc(doc(db, 'assets', id));
-        } catch (err) {
-          console.warn('Firebase delete error, removing locally:', err.message);
-        }
-      }
-      setAssets(prev => prev.filter(a => a.id !== id));
-      setMaint(prev => prev.filter(m => m.assetId !== id));
+      if (!isFirebaseConnected) throw new Error('Firestore belum terhubung.');
+      await deleteDoc(doc(db, 'assets', id));
       if (selected?.id === id) setSelected(null);
       setToast('Perangkat berhasil dihapus dari inventaris');
     } catch (e) {
@@ -665,48 +661,24 @@ function App() {
     }
   }
 
-  // Tambah Riwayat Maintenance
+  // Tambah Riwayat Maintenance — selalu ke Firestore
   async function addMaintenanceRecord(record, targetAssetId, newStatus) {
     try {
-      const newMaint = {
+      if (!isFirebaseConnected) throw new Error('Firestore belum terhubung.');
+      await addDoc(collection(db, 'maintenance'), {
         ...record,
         assetId: targetAssetId,
-        id: 'mnt-' + Date.now().toString(36),
-        createdAt: new Date().toISOString()
-      };
-
-      if (isFirebaseConnected) {
-        try {
-          await addDoc(collection(db, 'maintenance'), {
-            ...record,
-            assetId: targetAssetId,
-            createdAt: serverTimestamp()
-          });
-          if (newStatus) {
-            await updateDoc(doc(db, 'assets', targetAssetId), {
-              status: newStatus,
-              updatedAt: serverTimestamp()
-            });
-          }
-        } catch (err) {
-          console.warn('Firebase maint fallback:', err.message);
-        }
-      }
-
-      setMaint(prev => [newMaint, ...prev]);
-
+        createdAt: serverTimestamp()
+      });
       if (newStatus) {
-        setAssets(prev =>
-          prev.map(a => (a.id === targetAssetId ? { ...a, status: newStatus } : a))
-        );
-        if (selected?.id === targetAssetId) {
-          setSelected(prev => (prev ? { ...prev, status: newStatus } : null));
-        }
+        await updateDoc(doc(db, 'assets', targetAssetId), {
+          status: newStatus,
+          updatedAt: serverTimestamp()
+        });
       }
-
       setToast('Riwayat maintenance berhasil dicatat');
     } catch (e) {
-      alert('Gagal mencatat maintenance: ' + e.message);
+      alert('Gagal mencatat maintenance ke Firestore: ' + e.message);
     }
   }
 
@@ -714,14 +686,8 @@ function App() {
   async function removeMaintenanceRecord(id) {
     if (!confirm('Hapus riwayat maintenance ini?')) return;
     try {
-      if (isFirebaseConnected) {
-        try {
-          await deleteDoc(doc(db, 'maintenance', id));
-        } catch (e) {
-          console.warn('Firebase delete error:', e.message);
-        }
-      }
-      setMaint(prev => prev.filter(m => m.id !== id));
+      if (!isFirebaseConnected) throw new Error('Firestore belum terhubung.');
+      await deleteDoc(doc(db, 'maintenance', id));
       setToast('Riwayat pemeliharaan berhasil dihapus');
     } catch (e) {
       alert('Gagal menghapus riwayat: ' + e.message);
@@ -737,7 +703,7 @@ function App() {
       setUsername('');
       setPass('');
     } else {
-      alert('Username atau password salah! Gunakan username "admin" dan password "kominfobatang".');
+      alert('Username atau password salah.');
     }
   }
 
@@ -767,13 +733,9 @@ function App() {
       {/* SIDEBAR DESKTOP */}
       <aside className="sidebar">
         <div className="sidebarBrand">
-          <div className="sidebarFullLogoCard" title="Pemerintah Kabupaten Batang">
-            <img className="sidebarFullLogoImg" src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" />
-          </div>
+          <ClickableLogo src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="sidebarFullLogoImg" wrapperClassName="sidebarFullLogoCard" />
           <div className="sidebarSubBrand">
-            <div className="sidebarDiskominfoMiniHolder" title="Diskominfo Batang">
-              <img className="sidebarDiskominfoMini" src={diskominfoLogo} alt="Diskominfo Batang" />
-            </div>
+            <ClickableLogo src={diskominfoLogo} alt="Diskominfo Batang" className="sidebarDiskominfoMini" wrapperClassName="sidebarDiskominfoMiniHolder" />
             <div className="sidebarBrandText">
               <b className="appName">IT ASSET MGMT</b>
               <span className="deptSubtext">Dinas Komunikasi & Informatika</span>
@@ -843,7 +805,7 @@ function App() {
       <header className="mobileTopBar">
         <div className="mobileBrand">
           <div className="mobileFullLogoCard">
-            <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="mobileFullLogoImg" />
+            <ClickableLogo src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="mobileFullLogoImg" />
           </div>
         </div>
         <div className="mobileActions">
@@ -1086,12 +1048,8 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
       <div className="loginCard">
         <div className="loginHeader">
           <div className="loginLogosRow">
-            <div className="loginFullLogoBox" title="Pemerintah Kabupaten Batang">
-              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="loginFullLogoImg" />
-            </div>
-            <div className="loginDiskominfoBox" title="Dinas Komunikasi dan Informatika">
-              <img src={diskominfoLogo} alt="Diskominfo Batang" className="loginDiskominfoImg" />
-            </div>
+            <ClickableLogo src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="loginFullLogoImg" wrapperClassName="loginFullLogoBox" />
+            <ClickableLogo src={diskominfoLogo} alt="Diskominfo Batang" className="loginDiskominfoImg" wrapperClassName="loginDiskominfoBox" />
           </div>
 
           <div className="loginBadges">
@@ -1206,7 +1164,7 @@ function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
         <div className="welcomeGovBadge">
           <div className="govBadgeCard fullLogoCard">
             <div className="govFullLogoWrap" title="Pemerintah Kabupaten Batang">
-              <img src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="govFullLogoImg" />
+              <ClickableLogo src={pemkabFullLogo} alt="Pemerintah Kabupaten Batang" className="govFullLogoImg" />
             </div>
             <div className="govCardSub">
               <div className="govDiskominfoWrap" title="Dinas Komunikasi dan Informatika">
@@ -1353,7 +1311,7 @@ function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
                   <div className="recentMeta">
                     <span className="recentCode">{a.kodeAset}</span>
                     <span className="recentLoc">
-                      <Icons.MapPin /> {a.lokasi || 'Lokasi belum diisi'}
+                      <Icons.MapPin /> <MapsLink location={a.lokasi}>{a.lokasi || 'Lokasi belum diisi'}</MapsLink>
                     </span>
                   </div>
                 </div>
@@ -1555,7 +1513,7 @@ function InventoryView({
                   <div className="specItem">
                     <span className="specKey">Lokasi:</span>
                     <span className="specVal">
-                      <Icons.MapPin /> {a.lokasi || 'Belum diisi'}
+                      <Icons.MapPin /> <MapsLink location={a.lokasi}>{a.lokasi || 'Belum diisi'}</MapsLink>
                     </span>
                   </div>
                 </div>
@@ -1655,7 +1613,7 @@ function InventoryView({
                     </td>
                     <td>
                       <span className="locText">
-                        <Icons.MapPin /> {a.lokasi || '-'}
+                        <Icons.MapPin /> <MapsLink location={a.lokasi}>{a.lokasi || '-'}</MapsLink>
                       </span>
                     </td>
                     <td>
@@ -1731,10 +1689,11 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
       // 1. Coba upload ke endpoint /api/upload terlebih dahulu
       let uploadedUrl = '';
       try {
+        const fd = new FormData();
+        fd.append('file', file);
         const res = await fetch('/api/upload', {
           method: 'POST',
-          headers: { 'content-type': file.type },
-          body: file
+          body: fd
         });
         if (res.ok) {
           const data = await res.json();
@@ -1744,10 +1703,8 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
         console.info('Endpoint /api/upload tidak tersedia di server lokal, beralih ke kompresi client:', err);
       }
 
-      // 2. Jika /api/upload tidak menghasilkan URL (misal berjalan di localhost tanpa Vercel serverless),
-      // kompres gambar menjadi base64 data URL berkualitas tinggi namun ringkas (~150KB).
       if (!uploadedUrl) {
-        uploadedUrl = await compressImageToBase64(file);
+        throw new Error('Upload foto memerlukan endpoint Vercel Blob. Deploy project ke Vercel dan pastikan BLOB_READ_WRITE_TOKEN sudah dibuat.');
       }
 
       setForm(prev => ({ ...prev, fotoUrl: uploadedUrl }));
@@ -1756,42 +1713,6 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
     } finally {
       setUploading(false);
     }
-  }
-
-  // Helper kompres gambar di canvas browser
-  function compressImageToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = event => {
-        const img = new Image();
-        img.onload = () => {
-          const maxDim = 900;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height && width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-
-          const compressed = canvas.toDataURL('image/jpeg', 0.82);
-          resolve(compressed);
-        };
-        img.onerror = () => reject(new Error('Gagal membaca gambar'));
-        img.src = event.target.result;
-      };
-      reader.onerror = () => reject(new Error('Gagal membaca file'));
-      reader.readAsDataURL(file);
-    });
   }
 
   function removePhoto() {
@@ -1960,7 +1881,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
                   <b>Pilih Foto Perangkat</b>
                   <span>Format JPG, PNG, WebP (Maksimal 8 MB)</span>
                   <button type="button" className="btnLight btnSmall uploadTriggerBtn" disabled={uploading}>
-                    {uploading ? 'Mengompres Foto...' : 'Pilih dari File / Kamera'}
+                    {uploading ? 'Mengunggah Foto...' : 'Pilih dari File / Kamera'}
                   </button>
                 </div>
               )}
@@ -2097,7 +2018,7 @@ function DetailModal({ asset, maintList, closeModal, onEdit, onDelete, addMainte
                   <div className="quickCard">
                     <span className="qKey">Lokasi Penempatan</span>
                     <b className="qVal">
-                      <Icons.MapPin /> {asset.lokasi || 'Belum Ditentukan'}
+                      <Icons.MapPin /> <MapsLink location={asset.lokasi}>{asset.lokasi || 'Belum Ditentukan'}</MapsLink>
                     </b>
                   </div>
                   <div className="quickCard">
@@ -2392,7 +2313,7 @@ function PrintLabelModal({ asset, pemkabFullLogo, diskominfoLogo, closeModal }) 
                 <div className="labelMetaSmall">
                   <span>Kategori: {asset.kategori}</span>
                   {asset.serialNumber && <span>S/N: {asset.serialNumber}</span>}
-                  <span>Lokasi: {asset.lokasi || 'Diskominfo'}</span>
+                  <span>Lokasi: <MapsLink location={asset.lokasi}>{asset.lokasi || 'Diskominfo'}</MapsLink></span>
                 </div>
               </div>
             </div>
@@ -2501,7 +2422,7 @@ function MaintenanceView({
                     <StatusChip status={activeAssetObj.status} />
                   </div>
                   <span className="summaryLoc">
-                    <Icons.MapPin /> {activeAssetObj.lokasi || 'Lokasi belum ditentukan'}
+                    <Icons.MapPin /> <MapsLink location={activeAssetObj.lokasi}>{activeAssetObj.lokasi || 'Lokasi belum ditentukan'}</MapsLink>
                   </span>
                 </div>
               )}
@@ -2817,7 +2738,7 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
                   <td>{[a.merk, a.model].filter(Boolean).join(' ') || '-'}</td>
                   <td><code className="snCode">{a.serialNumber || '-'}</code></td>
                   <td>{a.ipAddress || '-'}</td>
-                  <td>{a.lokasi || '-'}</td>
+                  <td><MapsLink location={a.lokasi}>{a.lokasi || '-'}</MapsLink></td>
                   <td className="textCenter">{a.kondisi}</td>
                   <td className="textCenter">
                     <span className={`printStatusTag ${a.status.toLowerCase().replace(/\s+/g, '-')}`}>
