@@ -17,6 +17,8 @@ import pemkabLogo from './assets/pemkab-batang.png';
 import pemkabFullLogo from './assets/pemkab-batang-clean.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
 import './style.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // ==========================================
 // KONSTANTA & DATA AWAL (DISIKOMINFO BATANG)
@@ -2683,7 +2685,6 @@ function MaintenanceView({
 // ==========================================
 function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLogo }) {
   const [reportFilter, setReportFilter] = useState('Semua');
-  const [selectedMapAssetId, setSelectedMapAssetId] = useState('');
 
   const filtered = useMemo(() => {
     if (reportFilter === 'Semua') return assets;
@@ -2871,45 +2872,26 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
           </table>
         </div>
 
-        {/* PETA LOKASI ASET — DITAMPILKAN DI BAWAH TABEL LAPORAN */}
+        {/* PETA LOKASI ASET — DI BAWAH TABEL, SEMUA TITIK DITAMPILKAN */}
         <div className="reportMapSection noPrint">
           <div className="reportMapSectionHeader">
             <div>
               <span className="qKey">Peta Lokasi Aset</span>
-              <b>Pilih perangkat untuk melihat titik lokasinya</b>
+              <b>Seluruh titik aset pada laporan</b>
+              <small>Klik penanda pada peta untuk melihat perangkat. Tidak perlu memilih lokasi dari dropdown.</small>
             </div>
-            <select
-              value={selectedMapAssetId}
-              onChange={e => setSelectedMapAssetId(e.target.value)}
-              aria-label="Pilih perangkat untuk peta"
-            >
-              <option value="">Pilih perangkat...</option>
-              {filtered.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.kodeAset} — {a.nama}
-                </option>
-              ))}
-            </select>
+            <span className="mapAssetCount">{filtered.filter(a => a.latitude && a.longitude).length} titik lokasi</span>
           </div>
-          {selectedMapAssetId ? (
-            (() => {
-              const mapAsset = filtered.find(a => a.id === selectedMapAssetId);
-              if (!mapAsset) return null;
-              return (
-                <div className="reportMapContent">
-                  <div className="reportMapInfo">
-                    <div>
-                      <b>{mapAsset.nama}</b>
-                      <span>{mapAsset.lokasi || (mapAsset.latitude && mapAsset.longitude ? `${mapAsset.latitude}, ${mapAsset.longitude}` : 'Lokasi belum ditentukan')}</span>
-                    </div>
-                    <MapsLink location={mapAsset.lokasi} latitude={mapAsset.latitude} longitude={mapAsset.longitude}>Buka Google Maps</MapsLink>
-                  </div>
-                  <GoogleMapPreview location={mapAsset.lokasi} latitude={mapAsset.latitude} longitude={mapAsset.longitude} />
-                </div>
-              );
-            })()
+          {filtered.some(a => a.latitude && a.longitude) ? (
+            <div className="reportMapContent">
+              <InteractiveMap markers={filtered} />
+              <div className="reportMapLegend">
+                <span>Penanda dapat diklik untuk melihat detail aset.</span>
+                <span>Lokasi tersimpan dari titik yang dipilih saat tambah/edit perangkat.</span>
+              </div>
+            </div>
           ) : (
-            <div className="reportMapEmpty">Pilih perangkat di atas untuk menampilkan peta dan penanda lokasinya.</div>
+            <div className="reportMapEmpty">Belum ada aset yang memiliki titik koordinat. Tentukan titik lokasi melalui menu Tambah atau Edit Perangkat.</div>
           )}
         </div>
 
