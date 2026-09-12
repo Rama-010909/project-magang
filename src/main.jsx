@@ -2112,27 +2112,33 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
     setUploading(true);
 
     try {
-      // 1. Coba upload ke endpoint /api/upload terlebih dahulu
-      let uploadedUrl = '';
-      try {
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'content-type': file.type || 'application/octet-stream' },
-          body: file
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.url) uploadedUrl = data.url;
-        }
-      } catch (err) {
-        console.info('Endpoint /api/upload tidak tersedia di server lokal, beralih ke kompresi client:', err);
+      // Upload langsung ke Supabase Storage (bucket publik asset-photos).
+      // Publishable key aman untuk client; keamanan upload tetap dikontrol oleh
+      // Storage RLS policy pada bucket asset-photos.
+      const SUPABASE_URL = 'https://dvimdbvxzcqpowdzmasv.supabase.co';
+      const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_4XP30GvNyzIV-89ws9QkkA_DpZIeIm3';
+      const bucket = 'asset-photos';
+      const safeExt = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const safeBase = (file.name.replace(/\.[^/.]+$/, '') || 'foto')
+        .toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'foto';
+      const objectPath = `assets/${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${safeBase}.${safeExt}`;
+      const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${objectPath}`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+          'Content-Type': file.type || 'image/jpeg',
+          'x-upsert': 'false'
+        },
+        body: file
+      });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok) {
+        throw new Error(uploadData.message || uploadData.error || 'Upload ke Supabase Storage gagal.');
       }
 
-      if (!uploadedUrl) {
-        throw new Error('Upload foto memerlukan endpoint Vercel Blob. Deploy project ke Vercel dan pastikan BLOB_READ_WRITE_TOKEN sudah dibuat.');
-      }
-
-      setForm(prev => ({ ...prev, fotoUrl: uploadedUrl }));
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${objectPath}`;
+      setForm(prev => ({ ...prev, fotoUrl: publicUrl }));
     } catch (e) {
       alert('Gagal memproses gambar: ' + e.message);
     } finally {
