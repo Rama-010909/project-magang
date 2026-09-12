@@ -4864,3 +4864,16 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 /* V41 Local LAN Monitor */
 .monitorSource{display:block;margin-top:3px;font-size:11px;opacity:.65}
 @media (max-width:640px){.monitorSource{font-size:10px}.monitorRefresh{font-size:11px}}
+
+/* V43 runtime-safe map + refined password eye */
+.interactiveMapWrap{width:100%;border:1px solid var(--slate-200);border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 10px 25px rgba(15,23,42,.06)}
+.interactiveMapFrame{display:block;width:100%;height:330px;border:0}
+.mapMarkerList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px}
+.mapMarkerItem{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--slate-200);border-radius:12px;text-decoration:none;color:inherit;background:#fff;min-width:0}
+.mapMarkerItem svg{width:17px;height:17px;flex:0 0 auto;color:#2563eb}
+.mapMarkerItem span{min-width:0;display:flex;flex-direction:column;gap:2px}.mapMarkerItem b,.mapMarkerItem small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mapMarkerItem b{font-size:11px}.mapMarkerItem small{font-size:9px;color:var(--slate-500)}
+.mapMoreHint{display:block;padding:0 12px 12px;color:var(--slate-500)}
+.interactiveMapFallback{min-height:220px;display:flex;align-items:center;justify-content:center;gap:12px;padding:20px;border:1px solid var(--slate-200);border-radius:18px;background:rgba(248,250,252,.85);color:var(--slate-500)}
+.interactiveMapFallback svg{width:26px;height:26px;color:#2563eb;flex:0 0 auto}.interactiveMapFallback div{display:flex;flex-direction:column;gap:4px}.interactiveMapFallback b{font-size:13px;color:var(--slate-700)}.interactiveMapFallback span{font-size:10px}
+.togglePassBtn{overflow:visible!important;line-height:0!important;flex:0 0 36px!important}.togglePassBtn svg{display:block;width:20px!important;height:20px!important;overflow:visible!important}
+@media(max-width:640px){.interactiveMapFrame{height:250px}.mapMarkerList{grid-template-columns:1fr}.interactiveMapFallback{min-height:180px}}
