@@ -13,6 +13,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { enableAssetNotifications, updateNotificationPreferences, showAssetNotification, registerNotificationServiceWorker } from './notifications';
 import pemkabLogo from './assets/pemkab-batang.png';
 import pemkabFullLogo from './assets/pemkab-batang-clean.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
@@ -39,6 +40,27 @@ const CATEGORIES = [
 
 const STATUSES = ['Aktif', 'Maintenance', 'Rusak', 'Tidak Digunakan'];
 const CONDITIONS = ['Baik', 'Cukup', 'Rusak'];
+
+
+// Deteksi cerdas lokal (tanpa API/Environment Variables). Skor dihitung dari
+// kondisi, status, keterangan, dan riwayat maintenance. Ini bukan model ML
+// cloud, tetapi bekerja otomatis di browser dan tetap gratis.
+function analyzeAssetTrouble(asset, maintRecords = []) {
+  const text = `${asset.nama || ''} ${asset.kondisi || ''} ${asset.status || ''} ${asset.keterangan || ''}`.toLowerCase();
+  let score = 0;
+  const reasons = [];
+  const keywords = ['rusak', 'mati', 'error', 'gagal', 'gangguan', 'trouble', 'down', 'offline', 'tidak menyala', 'putus', 'bermasalah'];
+  const hits = keywords.filter(k => text.includes(k));
+  if (asset.status === 'Rusak') { score += 85; reasons.push('Status perangkat Rusak'); }
+  if (asset.kondisi === 'Rusak') { score += 70; reasons.push('Kondisi perangkat Rusak'); }
+  if (asset.status === 'Maintenance') { score += 35; reasons.push('Sedang Maintenance'); }
+  if (asset.kondisi === 'Cukup') { score += 15; reasons.push('Kondisi tercatat Cukup'); }
+  if (hits.length) { score += Math.min(40, hits.length * 18); reasons.push(`Indikasi: ${hits.slice(0, 3).join(', ')}`); }
+  const related = maintRecords.filter(m => m.assetId === asset.id || m.kodeAset === asset.kodeAset);
+  if (related.length >= 2) { score += 10; reasons.push('Riwayat maintenance berulang'); }
+  score = Math.min(100, score);
+  return { score, trouble: score >= 60, reasons };
+}
 
 const INITIAL_ASSETS = [
   {
@@ -227,7 +249,8 @@ const EMPTY_FORM = {
   kondisi: 'Baik',
   status: 'Aktif',
   keterangan: '',
-  fotoUrl: ''
+  fotoUrl: '',
+  monitorUrl: ''
 };
 
 // ==========================================
@@ -374,6 +397,12 @@ const Icons = {
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <path d="m9 12 2 2 4-4" />
+    </svg>
+  ),
+  Bell: () => (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   ),
   Clock: () => (
@@ -540,9 +569,21 @@ function App() {
   // Data state — Firestore adalah sumber data utama. Tidak ada fallback localStorage.
   const [assets, setAssets] = useState([]);
   const [maint, setMaint] = useState([]);
+  const [agentMonitorStates, setAgentMonitorStates] = useState({});
 
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [firebaseChecked, setFirebaseChecked] = useState(false);
+
+  // Status dari Local LAN Monitor Agent (tetap bisa diperbarui walau tab web tidak melakukan ping).
+  useEffect(() => {
+    if (!login) return;
+    const unsub = onSnapshot(collection(db, 'monitorStatus'), snapshot => {
+      const rows = {};
+      snapshot.docs.forEach(d => { rows[d.id] = { id: d.id, ...d.data(), source: 'agent' }; });
+      setAgentMonitorStates(rows);
+    }, err => console.warn('Monitor agent status:', err));
+    return () => unsub();
+  }, [login]);
 
   // Search, Filter & View
   const [search, setSearch] = useState('');
@@ -558,6 +599,18 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [timeStr, setTimeStr] = useState('');
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [notificationEnabled, setNotificationEnabled] = useState(() => localStorage.getItem('asset_notification_enabled') === 'true');
+  const [notificationTrouble, setNotificationTrouble] = useState(() => localStorage.getItem('asset_notify_trouble') !== 'false');
+  const [notificationMaintenance, setNotificationMaintenance] = useState(() => localStorage.getItem('asset_notify_maintenance') !== 'false');
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const notificationEnabledRef = useRef(notificationEnabled);
+  const notificationTroubleRef = useRef(notificationTrouble);
+  const notificationMaintenanceRef = useRef(notificationMaintenance);
+  const aiAlertedRef = useRef(new Set());
+  notificationEnabledRef.current = notificationEnabled;
+  notificationTroubleRef.current = notificationTrouble;
+  notificationMaintenanceRef.current = notificationMaintenance;
 
   // Sinkronisasi Waktu Lokal
   useEffect(() => {
@@ -579,6 +632,47 @@ function App() {
     const interval = setInterval(updateTime, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Service Worker dapat dipasang tanpa meminta izin notifikasi.
+  useEffect(() => {
+    if (!login) return;
+    registerNotificationServiceWorker().catch(() => {});
+    return () => {};
+  }, [login]);
+
+  async function handleEnableNotifications() {
+    setNotificationBusy(true);
+    try {
+      const result = await enableAssetNotifications({
+        notifyTrouble: notificationTrouble,
+        notifyMaintenance: notificationMaintenance
+      });
+      setNotificationEnabled(true);
+      localStorage.setItem('asset_notification_enabled', 'true');
+      localStorage.setItem('asset_notify_trouble', String(notificationTrouble));
+      localStorage.setItem('asset_notify_maintenance', String(notificationMaintenance));
+      setToast('Notifikasi perangkat berhasil diaktifkan');
+    } catch (e) {
+      alert('Notifikasi belum dapat diaktifkan: ' + e.message);
+    } finally {
+      setNotificationBusy(false);
+    }
+  }
+
+  async function saveNotificationPreferences(nextTrouble = notificationTrouble, nextMaintenance = notificationMaintenance) {
+    setNotificationTrouble(nextTrouble);
+    setNotificationMaintenance(nextMaintenance);
+    localStorage.setItem('asset_notify_trouble', String(nextTrouble));
+    localStorage.setItem('asset_notify_maintenance', String(nextMaintenance));
+    await updateNotificationPreferences({ notifyTrouble: nextTrouble, notifyMaintenance: nextMaintenance });
+  }
+
+  function sendAssetNotification(type, asset) {
+    if (!notificationEnabled) return;
+    if (type === 'trouble' && !notificationTrouble) return;
+    if (type === 'maintenance' && !notificationMaintenance) return;
+    showAssetNotification({ type, asset });
+  }
 
   // Sinkronisasi penuh dengan Cloud Firestore
   useEffect(() => {
@@ -610,6 +704,33 @@ function App() {
           snapshot => {
             const rows = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+            // Deteksi cerdas lokal: menganalisis aset setiap kali Firestore berubah.
+            // Notifikasi hanya dikirim sekali untuk satu kondisi agar tidak spam.
+            const previousMap = window.__assetNotificationSnapshot || null;
+            rows.forEach(asset => {
+              const ai = analyzeAssetTrouble(asset, window.__maintenanceNotificationRows || []);
+              const before = previousMap?.get(asset.id);
+              const changedToTrouble = asset.status === 'Rusak' && before?.status !== 'Rusak';
+              const aiKey = `${asset.id}:${asset.updatedAt?.seconds || asset.updatedAt || asset.status || asset.kondisi}`;
+              if (ai.trouble && notificationEnabledRef.current && notificationTroubleRef.current && !aiAlertedRef.current.has(aiKey)) {
+                if (previousMap && (changedToTrouble || ai.score >= 60)) {
+                  showAssetNotification({ type: 'trouble', asset: { ...asset, aiScore: ai.score, aiReason: ai.reasons.join(' • ') } });
+                  aiAlertedRef.current.add(aiKey);
+                }
+              }
+            });
+            if (previousMap) {
+              rows.forEach(asset => {
+                const before = previousMap.get(asset.id);
+                const changedToMaintenance = asset.status === 'Maintenance' && before?.status !== 'Maintenance';
+                if (changedToMaintenance && notificationEnabledRef.current && notificationMaintenanceRef.current) {
+                  sendAssetNotification('maintenance', asset);
+                }
+              });
+            }
+            window.__assetNotificationSnapshot = new Map(rows.map(a => [a.id, a]));
+
             setAssets(rows);
             setIsFirebaseConnected(true);
             setFirebaseChecked(true);
@@ -627,6 +748,7 @@ function App() {
           snapshot => {
             const rows = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             rows.sort((a, b) => String(b.tanggal || '').localeCompare(String(a.tanggal || '')));
+            window.__maintenanceNotificationRows = rows;
             setMaint(rows);
           },
           err => console.error('Firestore maintenance:', err)
@@ -676,6 +798,44 @@ function App() {
   }, [assets]);
 
   // Filter & Search
+  const [monitorStates, setMonitorStates] = useState({});
+  const monitorStatesRef = useRef({});
+  const [monitorTick, setMonitorTick] = useState(0);
+
+  useEffect(() => {
+    monitorStatesRef.current = monitorStates;
+  }, [monitorStates]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const next = { ...monitorStatesRef.current };
+      for (const asset of assets) {
+        const url = asset.monitorUrl || (asset.ipAddress ? `http://${asset.ipAddress}` : '');
+        if (!url) continue;
+        const started = Date.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4500);
+        try {
+          await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+          next[asset.id] = { online: true, latency: Date.now() - started, checkedAt: Date.now(), consecutiveFail: 0 };
+        } catch (e) {
+          const prev = next[asset.id] || {};
+          next[asset.id] = { online: false, latency: null, checkedAt: Date.now(), consecutiveFail: (prev.consecutiveFail || 0) + 1 };
+          if ((prev.consecutiveFail || 0) < 2 && notificationEnabledRef.current && notificationTroubleRef.current) {
+            showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline / indikasi trouble', aiScore: 90, aiReason: 'Perangkat tidak merespons pemeriksaan koneksi' } });
+          }
+        } finally { clearTimeout(timer); }
+      }
+      if (!cancelled) { setMonitorStates(next); monitorStatesRef.current = next; setMonitorTick(x => x + 1); }
+    };
+    if (assets.length) check();
+    const id = setInterval(check, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [assets.length]);
+
+  const monitorAlertsCount = assets.filter(a => monitorStates[a.id] && monitorStates[a.id].online === false && monitorStates[a.id].consecutiveFail >= 2).length;
+
   const filteredAssets = useMemo(() => {
     return assets
       .filter(item => {
@@ -724,10 +884,12 @@ function App() {
     try {
       if (!isFirebaseConnected) throw new Error('Firestore belum terhubung. Periksa Firebase Web App dan Rules.');
 
+      const previous = editing ? assets.find(a => a.id === editing) : null;
       const payload = {
         ...form,
         updatedAt: serverTimestamp()
       };
+      let savedId = editing;
 
       if (editing) {
         await updateDoc(doc(db, 'assets', editing), payload);
@@ -736,9 +898,10 @@ function App() {
           ...payload,
           createdAt: serverTimestamp()
         });
-        payload.id = docRef.id;
+        savedId = docRef.id;
       }
 
+      const savedAsset = { ...form, id: savedId };
       setToast(editing ? 'Data perangkat berhasil diperbarui' : 'Perangkat baru berhasil ditambahkan');
       setForm(EMPTY_FORM);
       setEditing(null);
@@ -774,6 +937,7 @@ function App() {
         assetId: targetAssetId,
         createdAt: serverTimestamp()
       });
+      const target = assets.find(a => a.id === targetAssetId);
       if (newStatus) {
         await updateDoc(doc(db, 'assets', targetAssetId), {
           status: newStatus,
@@ -873,6 +1037,15 @@ function App() {
           </button>
 
           <button
+            className={`navItem ${page === 'monitor' ? 'active' : ''}`}
+            onClick={() => go('monitor')}
+          >
+            <span className="navIcon"><Icons.Monitor /></span>
+            <span className="navLabel">Monitoring</span>
+            {monitorAlertsCount > 0 && <span className="badgeAlert">{monitorAlertsCount}</span>}
+          </button>
+
+          <button
             className={`navItem ${page === 'maintenance' ? 'active' : ''}`}
             onClick={() => go('maintenance')}
           >
@@ -913,6 +1086,14 @@ function App() {
           </div>
         </div>
         <div className="mobileActions">
+          <button
+            type="button"
+            className={`mobileNotificationBtn ${notificationEnabled ? 'enabled' : ''}`}
+            onClick={() => setShowNotificationSettings(true)}
+            title="Notifikasi"
+          >
+            <Icons.Bell />
+          </button>
           <div className="mobileDiskominfoMini">
             <img src={diskominfoLogo} alt="Diskominfo" />
           </div>
@@ -935,6 +1116,7 @@ function App() {
             <h1 className="headerTitle">
               {page === 'dashboard' && 'Dashboard Operasional'}
               {page === 'inventaris' && 'Inventaris Perangkat IT'}
+              {page === 'monitor' && 'Monitoring Perangkat'}
               {page === 'form' && (editing ? 'Perbarui Data Perangkat' : 'Tambah Perangkat Baru')}
               {page === 'maintenance' && 'Riwayat & Jadwal Pemeliharaan'}
               {page === 'laporan' && 'Laporan Rekapitulasi Aset'}
@@ -942,6 +1124,7 @@ function App() {
             <p className="headerDesc">
               {page === 'dashboard' && 'Ringkasan menyeluruh kondisi infrastruktur jaringan, server, dan komputer.'}
               {page === 'inventaris' && 'Pencatatan lengkap perangkat keras, spesifikasi teknis, IP Address, dan lokasi.'}
+              {page === 'monitor' && 'Pantau respons perangkat dan indikasi trouble secara otomatis.'}
               {page === 'form' && 'Lengkapi rincian identitas perangkat untuk inventarisasi Barang Milik Daerah (BMD).'}
               {page === 'maintenance' && 'Dokumentasi penanganan kendala teknis, perbaikan perangkat, dan hasil uji.'}
               {page === 'laporan' && 'Cetak format resmi atau ekspor tabel inventaris untuk kebutuhan audit & pembukuan.'}
@@ -949,6 +1132,15 @@ function App() {
           </div>
 
           <div className="headerRight">
+            <button
+              type="button"
+              className={`notificationBellBtn ${notificationEnabled ? 'enabled' : ''}`}
+              onClick={() => setShowNotificationSettings(true)}
+              title={notificationEnabled ? 'Pengaturan notifikasi' : 'Aktifkan notifikasi'}
+            >
+              <Icons.Bell />
+              <span className="notificationBellDot" />
+            </button>
             {page !== 'form' && (
               <button className="btnPrimary addDeviceBtn" onClick={openAdd}>
                 <Icons.Plus />
@@ -964,6 +1156,7 @@ function App() {
             counts={counts}
             assets={assets}
             maint={maint}
+            aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint) })).filter(x => x.trouble).sort((a,b) => b.score-a.score).slice(0,5)}
             setSelected={a => {
               setSelected(a);
               location.hash = 'asset=' + a.id;
@@ -1007,6 +1200,15 @@ function App() {
             loading={loading}
             editing={editing}
             cancel={() => go('inventaris')}
+          />
+        )}
+
+        {page === 'monitor' && (
+          <MonitoringView
+            assets={assets}
+            monitorStates={{ ...monitorStates, ...agentMonitorStates }}
+            aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: agentMonitorStates[a.id] || monitorStates[a.id] })).filter(x => x.trouble || x.monitor?.online === false)}
+            go={go}
           />
         )}
 
@@ -1106,6 +1308,19 @@ function App() {
         </button>
       </nav>
 
+      {showNotificationSettings && (
+        <NotificationSettingsModal
+          enabled={notificationEnabled}
+          trouble={notificationTrouble}
+          maintenance={notificationMaintenance}
+          busy={notificationBusy}
+          onEnable={handleEnableNotifications}
+          onToggleTrouble={value => saveNotificationPreferences(value, notificationMaintenance)}
+          onToggleMaintenance={value => saveNotificationPreferences(notificationTrouble, value)}
+          onClose={() => setShowNotificationSettings(false)}
+        />
+      )}
+
       {/* TOAST NOTIFICATION */}
       {toast && (
         <div className="toastNotification">
@@ -1115,6 +1330,53 @@ function App() {
           <span>{toast}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function NotificationSettingsModal({ enabled, trouble, maintenance, busy, onEnable, onToggleTrouble, onToggleMaintenance, onClose }) {
+  return (
+    <div className="modalOverlay notificationModalOverlay" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className="notificationSettingsCard">
+        <div className="notificationSettingsHeader">
+          <div className="notificationSettingsIcon"><Icons.Bell /></div>
+          <div>
+            <h3>Notifikasi Monitoring</h3>
+            <p>Dapatkan peringatan meskipun website sedang tidak dibuka.</p>
+          </div>
+          <button type="button" className="modalCloseBtn" onClick={onClose}>×</button>
+        </div>
+
+        <div className={`notificationStatusCard ${enabled ? 'active' : ''}`}>
+          <div>
+            <b>{enabled ? 'Notifikasi aktif' : 'Notifikasi belum aktif'}</b>
+            <span>{enabled ? 'Notifikasi browser aktif. Peringatan muncul saat aplikasi/PWA sedang aktif.' : 'Aktifkan izin notifikasi browser terlebih dahulu.'}</span>
+          </div>
+          <button type="button" className="btnPrimary" onClick={onEnable} disabled={busy}>
+            <Icons.Bell />
+            <span>{busy ? 'Mengaktifkan...' : enabled ? 'Perbarui Perangkat' : 'Aktifkan Notifikasi'}</span>
+          </button>
+        </div>
+
+        <div className="notificationOptions">
+          <label className="notificationOption">
+            <span><b>Aset Trouble / Rusak</b><small>Beritahu saat perangkat berubah menjadi Rusak.</small></span>
+            <input type="checkbox" checked={trouble} onChange={e => onToggleTrouble(e.target.checked)} />
+          </label>
+          <label className="notificationOption">
+            <span><b>Aset Maintenance</b><small>Beritahu saat ada perangkat masuk maintenance atau catatan servis baru.</small></span>
+            <input type="checkbox" checked={maintenance} onChange={e => onToggleMaintenance(e.target.checked)} />
+          </label>
+        </div>
+
+        <div className="notificationSettingsNote">
+          Push notification membutuhkan izin browser dan koneksi HTTPS. Mode ini gratis tanpa Environment Variables. Browser perlu tetap aktif/menjalankan PWA agar perubahan Firestore dapat dipantau.
+        </div>
+
+        <div className="modalFooter">
+          <button type="button" className="btnLight" onClick={onClose}>Tutup</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1220,7 +1482,7 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
 // ==========================================
 // KOMPONEN DASHBOARD
 // ==========================================
-function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
+function DashboardView({ counts, assets, maint, aiAlerts, setSelected, go, openAdd }) {
   const pct = n => (counts.total ? Math.round((n / counts.total) * 100) : 0);
 
   // Kategori terbanyak
@@ -1283,6 +1545,31 @@ function DashboardView({ counts, assets, maint, setSelected, go, openAdd }) {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* SMART TROUBLE MONITOR */}
+      <section className="smartMonitorCard">
+        <div className="smartMonitorHead">
+          <div>
+            <span className="smartEyebrow">SMART ASSET MONITOR</span>
+            <h3>Deteksi Trouble Otomatis</h3>
+            <p>Menganalisis kondisi, status, keterangan, dan riwayat maintenance tanpa layanan AI berbayar.</p>
+          </div>
+          <div className={`smartStatus ${aiAlerts.length ? 'danger' : 'ok'}`}>
+            <span className="smartPulse" /> {aiAlerts.length ? `${aiAlerts.length} indikasi perlu dicek` : 'Semua terpantau normal'}
+          </div>
+        </div>
+        {aiAlerts.length ? (
+          <div className="smartAlertList">
+            {aiAlerts.map(({ asset, score, reasons }) => (
+              <button key={asset.id} type="button" className="smartAlertItem" onClick={() => setSelected(asset)}>
+                <span className="smartScore">{score}%</span>
+                <span className="smartAlertText"><b>{asset.nama}</b><small>{reasons.slice(0,2).join(' • ')}</small></span>
+                <span className="smartArrow">›</span>
+              </button>
+            ))}
+          </div>
+        ) : <div className="smartEmpty">Belum ada indikasi trouble berdasarkan data aset saat ini.</div>}
       </section>
 
       {/* STATS CARDS */}
@@ -2683,6 +2970,30 @@ function MaintenanceView({
 // ==========================================
 // KOMPONEN LAPORAN & REKAP (PRINT KOP SURAT)
 // ==========================================
+function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
+  const monitored = assets.filter(a => a.monitorUrl || a.ipAddress);
+  const offline = monitored.filter(a => monitorStates[a.id]?.online === false);
+  const online = monitored.filter(a => monitorStates[a.id]?.online === true);
+  return (
+    <div className="monitorPage">
+      <div className="pageIntro">
+        <div><span className="smartEyebrow">REAL-TIME ASSET MONITOR</span><h2>Monitoring Perangkat</h2><p>Monitoring LAN berjalan dari komputer agent di jaringan, sehingga pemeriksaan tetap berjalan walaupun website ditutup.</p></div>
+        <div className="monitorRefresh">Agent LAN • pemeriksaan setiap 30 detik</div>
+      </div>
+      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Online</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Indikasi Offline</span></div></div>
+      <div className="monitorList">
+        {monitored.map(asset => { const st=monitorStates[asset.id]; const ai=analyzeAssetTrouble(asset,[]); const isOff=st?.online===false; return <div className={`monitorRow ${isOff?'isOffline':''}`} key={asset.id}>
+          <div className={`monitorDot ${isOff?'offline':st?.online?'online':'pending'}`}></div>
+          <div className="monitorMain"><b>{asset.nama}</b><small>{asset.ipAddress || asset.monitorUrl}</small><span>{ai.trouble ? `Indikasi trouble ${ai.score}%` : (isOff ? 'Tidak merespons pemeriksaan' : st?.online ? `Terhubung • ${st.latency || 0} ms` : 'Menunggu pemeriksaan')}</span><small className="monitorSource">{st?.source === 'agent' ? `Agent LAN • ${st?.method || 'monitoring'}` : 'Browser monitor'}</small></div>
+          <button className="btnLight" onClick={()=>go('inventaris')}>Lihat aset</button>
+        </div>})}
+        {!monitored.length && <div className="monitorEmpty">Belum ada perangkat yang memiliki IP Address atau Alamat Monitoring. Tambahkan pada data aset untuk mulai dipantau.</div>}
+      </div>
+      <div className="monitorNote"><b>Deteksi cerdas:</b> status/kondisi/keterangan aset dianalisis bersama hasil pemeriksaan koneksi. Sistem ini bukan pengganti monitoring jaringan berbasis ICMP/agent; perangkat LAN lokal dapat dibatasi oleh keamanan browser.</div>
+    </div>
+  );
+}
+
 function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLogo }) {
   const [reportFilter, setReportFilter] = useState('Semua');
 

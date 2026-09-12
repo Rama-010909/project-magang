@@ -4564,3 +4564,303 @@ code {
   .headerTitle { font-size:18px !important; }
   .mainContent { padding-left:10px !important; padding-right:10px !important; }
 }
+
+/* =========================================================
+   V35 — TRUE MOBILE APP LAYOUT
+   ========================================================= */
+html, body, #root { max-width: 100%; overflow-x: hidden; }
+.appLayout, .mainContent, .dashboardContainer, .inventoryContainer, .maintPageContainer { min-width: 0; }
+.mainContent > *, .dashboardContainer > *, .inventoryContainer > *, .maintPageContainer > * { min-width: 0; max-width: 100%; }
+
+@media (max-width: 768px) {
+  html { font-size: 14px; }
+  body { width: 100%; min-width: 0; overflow-x: hidden; }
+  .appLayout { display: block; width: 100%; min-width: 0; }
+  .mainContent {
+    display: block;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 12px 12px 92px !important;
+    overflow: hidden;
+  }
+
+  /* Header benar-benar mengikuti lebar layar HP. */
+  .pageHeader { width: 100%; min-width: 0; }
+  .headerLeft { min-width: 0; width: 100%; }
+  .headerRight { width: 100%; min-width: 0; }
+  .headerBreadcrumb {
+    display: flex !important;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 8.5px !important;
+    padding: 5px 8px !important;
+    letter-spacing: .45px !important;
+  }
+  .headerBreadcrumb svg { flex: 0 0 auto; }
+  .headerClock { flex: 0 0 auto; }
+  .headerTitle { margin-top: 7px; font-size: 20px !important; line-height: 1.22 !important; }
+  .headerDesc { max-width: 100%; font-size: 10.5px !important; line-height: 1.5 !important; }
+
+  /* Top bar seperti header aplikasi, bukan header desktop yang dipaksa mengecil. */
+  .mobileTopBar {
+    width: 100%;
+    min-width: 0;
+    padding: 8px 11px !important;
+    min-height: 52px !important;
+    gap: 8px;
+  }
+  .mobileBrand { min-width: 0; flex: 1; }
+  .mobileFullLogoCard {
+    width: auto !important;
+    max-width: 145px !important;
+    height: 29px !important;
+    min-width: 0;
+    padding: 2px 6px !important;
+    border-radius: 8px !important;
+  }
+  .mobileFullLogoImg { max-width: 100%; height: 24px !important; }
+  .mobileActions { flex: 0 0 auto; gap: 6px !important; }
+  .mobileDiskominfoMini {
+    width: 30px !important;
+    height: 30px !important;
+    flex: 0 0 30px;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  .mobileDiskominfoMini img { width: 100%; height: 100%; object-fit: contain !important; border-radius: 0 !important; }
+  .mobileLogout { width: 30px !important; height: 30px !important; border-radius: 9px !important; }
+
+  /* Dashboard mobile: satu kolom untuk banner/panel, dua kolom hanya untuk statistik. */
+  .dashboardContainer { width: 100%; gap: 13px !important; }
+  .welcomeBanner {
+    width: 100% !important;
+    min-width: 0 !important;
+    display: block !important;
+    padding: 17px 15px !important;
+    border-radius: 17px !important;
+  }
+  .welcomeContent { width: 100%; max-width: none !important; min-width: 0; }
+  .welcomeEyebrow { font-size: 8.5px !important; letter-spacing: 1px !important; margin-bottom: 7px !important; }
+  .welcomeContent h2 { font-size: 18px !important; line-height: 1.28 !important; margin-bottom: 8px !important; }
+  .welcomeContent p { font-size: 10.5px !important; line-height: 1.55 !important; margin-bottom: 12px !important; }
+  /* Kartu logo samping tidak dipaksakan di HP; header sudah membawa identitas logo. */
+  .welcomeGovBadge { display: none !important; }
+  .welcomeActions { display: grid !important; grid-template-columns: 1fr !important; width: 100%; gap: 7px !important; }
+  .welcomeActions button { width: 100% !important; min-height: 40px !important; padding: 9px 12px !important; border-radius: 11px !important; font-size: 11px !important; }
+
+  .statsGrid {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  .statCard { min-width: 0 !important; width: 100%; padding: 12px !important; border-radius: 14px !important; }
+  .statCardTop { gap: 6px; margin-bottom: 8px; }
+  .statLabel { font-size: 9.5px !important; line-height: 1.3 !important; }
+  .statIconBox { width: 29px !important; height: 29px !important; flex: 0 0 29px; }
+  .statValue { font-size: 21px !important; line-height: 1.1 !important; }
+  .statFooter { gap: 4px; flex-wrap: wrap; }
+  .statFooter span { font-size: 8.5px !important; }
+  .statBadgePositive, .statBadgeWarning, .statBadgeDanger { padding: 2px 5px !important; }
+
+  .dashGridCols { width: 100%; grid-template-columns: 1fr !important; gap: 10px !important; }
+  .dashPanel { width: 100%; min-width: 0; padding: 14px !important; border-radius: 15px !important; }
+  .panelHeader { gap: 8px; margin-bottom: 12px; }
+  .panelTitle { font-size: 14px !important; }
+  .panelSubtitle { font-size: 9.5px !important; }
+  .statusBarList { gap: 10px; }
+  .statusBarMeta { font-size: 10px; }
+  .recentRow { min-width: 0; padding: 9px 0 !important; }
+  .recentDetails { min-width: 0; }
+  .recentName, .recentLoc { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .infoBanner { width: 100%; min-width: 0; padding: 12px !important; border-radius: 14px !important; }
+
+  /* Inventaris mobile */
+  .inventoryContainer, .inventoryToolbar, .tableCard { width: 100%; min-width: 0; }
+  .inventoryToolbar { padding: 12px !important; border-radius: 14px !important; }
+  .filterControls { width: 100%; gap: 7px !important; }
+  .filterGroup { width: 100%; min-width: 0; }
+  .filterGroup select { min-width: 0 !important; width: 100%; }
+  .inventoryResultsBar { font-size: 10px !important; }
+  .tableScroll { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Form tambah/edit */
+  .assetFormCard { width: 100% !important; min-width: 0 !important; padding: 14px 12px !important; border-radius: 15px !important; }
+  .formGrid { width: 100%; grid-template-columns: 1fr !important; min-width: 0; }
+  .formGroup, .fieldGroup { min-width: 0; width: 100%; }
+  .locationPicker, .locationInputRow { width: 100%; min-width: 0; }
+  .locationInputRow { grid-template-columns: 1fr !important; }
+  .interactiveMap { width: 100% !important; height: 235px !important; min-width: 0; }
+  .mapPickerHint { font-size: 9.5px !important; }
+  .photoPreviewCard { width: 100%; min-width: 0; }
+
+  /* Laporan: tabel tetap boleh digeser, tetapi tidak boleh membuat seluruh halaman melebar. */
+  .reportsContainer, .reportPage, .printableDocumentCard, .reportMapSection { width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
+  .officialTable { min-width: 720px !important; }
+  .reportMapSection { padding: 12px !important; border-radius: 15px !important; }
+  .reportMapSectionHeader select { min-width: 0 !important; width: 100% !important; }
+  .googleMapPreview { width: 100% !important; height: 230px !important; }
+
+  /* Modal di HP benar-benar seperti bottom sheet. */
+  .modalOverlay { width: 100vw !important; padding: 0 !important; }
+  .modalContainer { width: 100% !important; max-width: 100% !important; max-height: 90svh !important; border-radius: 19px 19px 0 0 !important; }
+  .modalBody { overflow-x: hidden; }
+  .specHeroRow, .specDetailGrid, .specQuickCards { width: 100%; min-width: 0; }
+
+  /* Bottom nav tidak menutupi isi. */
+  .mobileBottomNav {
+    left: 8px !important; right: 8px !important; bottom: 7px !important;
+    width: auto !important; height: 58px !important;
+    border-radius: 17px !important; padding: 5px !important;
+  }
+  .mobNavItem { min-width: 0; font-size: 8px !important; padding: 5px 1px !important; }
+  .mobNavItem svg { width: 17px; height: 17px; }
+  .mobNavFab { width: 34px !important; height: 34px !important; margin-top: -13px !important; }
+}
+
+@media (max-width: 380px) {
+  .mainContent { padding-left: 9px !important; padding-right: 9px !important; }
+  .mobileFullLogoCard { max-width: 128px !important; }
+  .headerTitle { font-size: 18px !important; }
+  .welcomeContent h2 { font-size: 17px !important; }
+  .statsGrid { gap: 6px !important; }
+  .statCard { padding: 10px !important; }
+  .statLabel { font-size: 9px !important; }
+  .statValue { font-size: 19px !important; }
+}
+
+/* =========================================================
+   V36 — PUSH NOTIFICATION UI
+   ========================================================= */
+.notificationBellBtn,
+.mobileNotificationBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--slate-700);
+  background: rgba(255,255,255,.58);
+  border: 1px solid rgba(148,163,184,.25);
+  box-shadow: 0 8px 22px rgba(15,23,42,.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform .2s ease, background .2s ease, border-color .2s ease;
+}
+.notificationBellBtn { width: 44px; height: 44px; border-radius: 14px; }
+.notificationBellBtn:hover,
+.mobileNotificationBtn:hover { transform: translateY(-1px); background: rgba(255,255,255,.78); }
+.notificationBellBtn.enabled { color: var(--gov-blue-600); border-color: rgba(37,99,235,.25); }
+.notificationBellDot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.8);
+}
+.notificationBellBtn.enabled .notificationBellDot { background: #22c55e; }
+.mobileNotificationBtn { width: 31px; height: 31px; border-radius: 9px; }
+.mobileNotificationBtn.enabled { color: var(--gov-blue-600); }
+
+.notificationModalOverlay { z-index: 1200; }
+.notificationSettingsCard {
+  width: min(560px, calc(100vw - 28px));
+  max-height: min(88vh, 720px);
+  overflow: auto;
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(248,250,252,.97);
+  border: 1px solid rgba(255,255,255,.8);
+  box-shadow: 0 30px 80px rgba(2,8,23,.35);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.notificationSettingsHeader {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 18px;
+}
+.notificationSettingsIcon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: #2563eb;
+  background: rgba(37,99,235,.10);
+  border: 1px solid rgba(37,99,235,.12);
+}
+.notificationSettingsHeader h3 { font-size: 18px; color: var(--slate-900); margin: 0; }
+.notificationSettingsHeader p { margin: 3px 0 0; color: var(--slate-500); font-size: 11.5px; line-height: 1.5; }
+.notificationStatusCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 15px;
+  border-radius: 16px;
+  background: rgba(226,232,240,.52);
+  border: 1px solid rgba(148,163,184,.18);
+  margin-bottom: 14px;
+}
+.notificationStatusCard.active { background: rgba(220,252,231,.58); border-color: rgba(34,197,94,.2); }
+.notificationStatusCard b { display: block; color: var(--slate-800); font-size: 13px; }
+.notificationStatusCard span { display: block; margin-top: 3px; color: var(--slate-500); font-size: 10.5px; line-height: 1.45; max-width: 330px; }
+.notificationOptions { display: grid; gap: 9px; }
+.notificationOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 14px 15px;
+  border-radius: 15px;
+  background: rgba(255,255,255,.68);
+  border: 1px solid rgba(148,163,184,.18);
+}
+.notificationOption b { display:block; color: var(--slate-800); font-size: 12.5px; }
+.notificationOption small { display:block; margin-top:3px; color:var(--slate-500); font-size:10.5px; line-height:1.45; }
+.notificationOption input { width: 19px; height: 19px; accent-color: #2563eb; flex:0 0 auto; }
+.notificationSettingsNote {
+  margin-top: 13px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  color: var(--slate-500);
+  background: rgba(241,245,249,.8);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+@media (max-width: 768px) {
+  .notificationBellBtn { width: 42px; height: 42px; border-radius: 13px; }
+  .notificationSettingsCard { width: calc(100vw - 20px); padding: 17px 15px; border-radius: 20px; }
+  .notificationSettingsHeader { grid-template-columns: 42px 1fr auto; gap:10px; }
+  .notificationSettingsIcon { width:42px; height:42px; border-radius:13px; }
+  .notificationSettingsHeader h3 { font-size:16px; }
+  .notificationStatusCard { flex-direction:column; align-items:stretch; }
+  .notificationStatusCard .btnPrimary { width:100%; min-height:42px; }
+  .notificationOption { padding:12px; }
+}
+
+/* Smart Asset Monitor */
+.smartMonitorCard{margin:18px 0 20px;padding:22px;border:1px solid rgba(56,189,248,.18);border-radius:22px;background:linear-gradient(135deg,rgba(15,36,63,.92),rgba(7,24,45,.86));box-shadow:0 14px 35px rgba(0,0,0,.16);color:#eaf6ff}
+.smartMonitorHead{display:flex;align-items:center;justify-content:space-between;gap:18px}.smartEyebrow{font-size:10px;letter-spacing:.14em;font-weight:800;color:#67d4ff}.smartMonitorCard h3{margin:5px 0 4px;font-size:20px}.smartMonitorCard p{margin:0;color:#a8bfd3;font-size:12px}.smartStatus{white-space:nowrap;padding:9px 12px;border-radius:999px;background:rgba(255,255,255,.07);font-size:11px;font-weight:700}.smartStatus.danger{color:#ffd0d0;background:rgba(239,68,68,.12)}.smartStatus.ok{color:#b8f5d0}.smartPulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 5px rgba(255,255,255,.04)}.smartAlertList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:16px}.smartAlertItem{display:grid;grid-template-columns:48px 1fr 16px;align-items:center;gap:10px;text-align:left;border:1px solid rgba(255,255,255,.08);border-radius:15px;background:rgba(255,255,255,.045);color:inherit;padding:10px 12px;cursor:pointer}.smartAlertItem:hover{background:rgba(255,255,255,.08);transform:translateY(-1px)}.smartScore{font-weight:900;font-size:13px;color:#ffb3b3}.smartAlertText{min-width:0;display:flex;flex-direction:column;gap:3px}.smartAlertText b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smartAlertText small{font-size:10px;color:#9db4c8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smartArrow{font-size:24px;color:#72d9ff}.smartEmpty{margin-top:14px;padding:13px;border-radius:14px;background:rgba(255,255,255,.04);color:#9db4c8;font-size:12px}@media(max-width:700px){.smartMonitorCard{padding:16px;border-radius:18px;margin:12px 0 16px}.smartMonitorHead{align-items:flex-start;flex-direction:column}.smartMonitorCard h3{font-size:17px}.smartStatus{white-space:normal}.smartAlertList{grid-template-columns:1fr}.smartAlertItem{grid-template-columns:44px 1fr 14px}}
+
+/* V40 - smart device monitoring */
+.monitorPage{padding:22px 24px 30px}.pageIntro{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;margin-bottom:18px}.pageIntro h2{margin:4px 0;font-size:24px}.pageIntro p{margin:0;color:var(--slate-500);font-size:12px}.monitorRefresh{padding:9px 12px;border:1px solid rgba(56,189,248,.18);border-radius:999px;background:rgba(56,189,248,.07);font-size:11px;font-weight:700}.monitorStats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}.monitorStats>div{padding:18px;border-radius:18px;border:1px solid var(--slate-200);background:rgba(255,255,255,.72);box-shadow:0 10px 25px rgba(15,23,42,.06)}.monitorStats b{display:block;font-size:28px}.monitorStats span{font-size:11px;color:var(--slate-500)}.monitorStats .danger b{color:#dc2626}.monitorList{display:grid;gap:10px}.monitorRow{display:grid;grid-template-columns:12px 1fr auto;align-items:center;gap:13px;padding:14px 16px;border-radius:17px;border:1px solid var(--slate-200);background:rgba(255,255,255,.78)}.monitorRow.isOffline{border-color:rgba(239,68,68,.28);background:rgba(254,242,242,.78)}.monitorDot{width:10px;height:10px;border-radius:50%}.monitorDot.online{background:#16a34a;box-shadow:0 0 0 5px rgba(22,163,74,.10)}.monitorDot.offline{background:#dc2626;box-shadow:0 0 0 5px rgba(220,38,38,.10)}.monitorDot.pending{background:#94a3b8}.monitorMain{display:flex;flex-direction:column;gap:3px;min-width:0}.monitorMain b{font-size:13px}.monitorMain small{font-size:10px;color:var(--slate-500)}.monitorMain span{font-size:10px;color:var(--slate-500)}.monitorEmpty,.monitorNote{margin-top:14px;padding:15px;border-radius:16px;background:rgba(15,36,63,.05);font-size:11px;color:var(--slate-500)}.monitorNote b{color:var(--slate-700)}
+.formFieldWide{grid-column:1/-1}
+@media(max-width:700px){.monitorPage{padding:14px 12px 90px}.pageIntro{display:block}.pageIntro h2{font-size:20px}.monitorRefresh{display:inline-block;margin-top:10px}.monitorStats{grid-template-columns:repeat(3,1fr);gap:7px}.monitorStats>div{padding:13px 10px;border-radius:15px}.monitorStats b{font-size:21px}.monitorRow{grid-template-columns:10px 1fr;padding:13px}.monitorRow .btnLight{grid-column:2;justify-self:start}.formFieldWide{grid-column:auto}}
+
+/* V41 Local LAN Monitor */
+.monitorSource{display:block;margin-top:3px;font-size:11px;opacity:.65}
+@media (max-width:640px){.monitorSource{font-size:10px}.monitorRefresh{font-size:11px}}
