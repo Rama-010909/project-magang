@@ -1061,7 +1061,7 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
 
         <form className="loginForm" onSubmit={onLogin}>
           <label className="inputGroup">
-            <span className="inputLabel">Username Petugas</span>
+            <span className="inputLabel">Username</span>
             <div className="inputFieldWrap">
               <input
                 type="text"
@@ -1075,7 +1075,7 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
           </label>
 
           <label className="inputGroup">
-            <span className="inputLabel">Kata Sandi (Password)</span>
+            <span className="inputLabel">Password</span>
             <div className="inputFieldWrap passwordWrap">
               <input
                 type={showPass ? 'text' : 'password'}
