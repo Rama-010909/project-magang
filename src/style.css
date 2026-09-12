@@ -5234,3 +5234,54 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .officialKopSurat .kopHeaderText h2 { font-size: 11px !important; }
   .officialKopSurat .kopContact { font-size: 8px !important; }
 }
+
+/* V53 — kop laporan dan toolbar ekspor lebih rapi */
+.officialKopSurat .kopEmblemBatang {
+  width: 116px !important;
+  height: 116px !important;
+}
+.reportsToolbarRight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.reportsToolbarRight button {
+  white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .officialKopSurat {
+    grid-template-columns: 78px minmax(0, 1fr) 8px !important;
+  }
+  .officialKopSurat .kopEmblemBatang {
+    width: 72px !important;
+    height: 72px !important;
+  }
+  .reportsToolbarRight {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .reportsToolbarRight button {
+    width: 100%;
+    justify-content: center;
+    min-width: 0;
+  }
+}
+@media print {
+  .reportsToolbar,
+  .reportsToolbarRight,
+  .reportsToolbarLeft,
+  .noPrint,
+  button,
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+  .officialKopSurat .kopEmblemBatang {
+    width: 116px !important;
+    height: 116px !important;
+  }
+}

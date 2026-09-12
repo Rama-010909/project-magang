@@ -3045,6 +3045,12 @@ function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
   );
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
 function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLogo }) {
   const [reportFilter, setReportFilter] = useState('Semua');
 
@@ -3099,6 +3105,43 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
     URL.revokeObjectURL(url);
   }
 
+  function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportWord() {
+    const rows = filtered.map((a, i) => `
+      <tr>
+        <td>${i + 1}</td><td>${escapeHtml(a.kodeAset)}</td><td>${escapeHtml(a.nama)}</td>
+        <td>${escapeHtml(a.kategori)}</td><td>${escapeHtml([a.merk, a.model].filter(Boolean).join(' ') || '-')}</td>
+        <td>${escapeHtml(a.serialNumber || '-')}</td><td>${escapeHtml(a.ipAddress || '-')}</td>
+        <td>${escapeHtml(a.kondisi || '-')}</td><td>${escapeHtml(a.status || '-')}</td>
+      </tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Laporan Aset IT</title>
+      <style>body{font-family:Arial,sans-serif;font-size:10pt}h1,h2,p{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:5px}th{background:#e5e7eb}</style>
+      </head><body><h2>PEMERINTAH KABUPATEN BATANG</h2><h1>DINAS KOMUNIKASI DAN INFORMATIKA</h1>
+      <p>LAPORAN REKAPITULASI INVENTARIS ASET TEKNOLOGI INFORMASI</p>
+      <p>Per tanggal: ${escapeHtml(printDate)}</p><table><thead><tr><th>No</th><th>Kode Aset</th><th>Nama Perangkat</th><th>Kategori</th><th>Merk / Model</th><th>Nomor Seri</th><th>IP Address</th><th>Kondisi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    downloadFile(html, `Laporan_Aset_IT_Diskominfo_Batang_${new Date().toISOString().slice(0,10)}.doc`, 'application/msword');
+  }
+
+  function exportExcel() {
+    const rows = filtered.map((a, i) => `
+      <tr><td>${i + 1}</td><td>${escapeHtml(a.kodeAset)}</td><td>${escapeHtml(a.nama)}</td><td>${escapeHtml(a.kategori)}</td>
+      <td>${escapeHtml([a.merk, a.model].filter(Boolean).join(' ') || '-')}</td><td>${escapeHtml(a.serialNumber || '-')}</td>
+      <td>${escapeHtml(a.ipAddress || '-')}</td><td>${escapeHtml(a.kondisi || '-')}</td><td>${escapeHtml(a.status || '-')}</td></tr>`).join('');
+    const html = `<html><head><meta charset="utf-8"><style>table{border-collapse:collapse}th,td{border:1px solid #000;padding:5px}th{background:#dbeafe}</style></head><body><table><tr><th>No</th><th>Kode Aset</th><th>Nama Perangkat</th><th>Kategori</th><th>Merk / Model</th><th>Nomor Seri</th><th>IP Address</th><th>Kondisi</th><th>Status</th></tr>${rows}</table></body></html>`;
+    downloadFile(html, `Laporan_Aset_IT_Diskominfo_Batang_${new Date().toISOString().slice(0,10)}.xls`, 'application/vnd.ms-excel');
+  }
+
   function printReport() {
     window.print();
   }
@@ -3127,9 +3170,17 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
         </div>
 
         <div className="reportsToolbarRight">
+          <button className="btnLight" onClick={exportWord}>
+            <Icons.Download />
+            <span>Word</span>
+          </button>
+          <button className="btnLight" onClick={exportExcel}>
+            <Icons.Download />
+            <span>Excel</span>
+          </button>
           <button className="btnLight" onClick={exportCSV}>
             <Icons.Download />
-            <span>Ekspor Excel / CSV</span>
+            <span>CSV</span>
           </button>
           <button className="btnPrimary" onClick={printReport}>
             <Icons.Printer />
