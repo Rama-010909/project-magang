@@ -5,3 +5,6 @@ Perbaikan:
 - Ukuran logo sedikit diperbesar tanpa merusak proporsi.
 - Kop laporan menggunakan grid agar teks benar-benar berada di tengah halaman, tidak bergeser mengikuti ukuran logo.
 - Penataan kop tetap responsif pada HP.
+
+
+V56: kop laporan memakai keterangan lokasi yang tidak mengarang nomor jalan: Kabupaten Batang, Jawa Tengah.

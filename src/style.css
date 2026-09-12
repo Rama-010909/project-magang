@@ -3547,9 +3547,16 @@ code {
   }
 
   .officialSignatures {
-    flex-direction: column;
-    gap: 30px;
+    flex-direction: row;
+    gap: 8px;
     padding: 0;
+    align-items: flex-start;
+  }
+
+  .officialSignatures .sigColumn {
+    width: 50%;
+    min-width: 0;
+    font-size: 10px;
   }
 
   .toastNotification {
@@ -5338,5 +5345,63 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .officialKopSurat .kopEmblemBatang {
     width: 76px !important;
     height: 76px !important;
+  }
+}
+
+
+/* V55 — laporan responsif, tanda tangan sejajar, dan cetak bersih */
+.officialKopSurat {
+  display: grid !important;
+  grid-template-columns: 104px minmax(0, 1fr) 104px;
+  align-items: center;
+  gap: 12px;
+}
+.officialKopSurat .kopEmblemBatang {
+  width: 88px !important;
+  height: 88px !important;
+  object-fit: contain !important;
+  justify-self: center;
+}
+.officialKopSurat .kopHeaderText { min-width: 0; text-align: center; }
+.officialKopSurat .kopContact { line-height: 1.45; }
+.officialSignatures {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+}
+.officialSignatures .sigColumn {
+  width: 50% !important;
+  min-width: 0 !important;
+}
+@media (max-width: 480px) {
+  .officialKopSurat { grid-template-columns: 58px minmax(0, 1fr) 4px !important; gap: 5px !important; }
+  .officialKopSurat .kopEmblemBatang { width: 54px !important; height: 54px !important; }
+  .officialKopSurat .kopHeaderText h3 { font-size: 11px !important; }
+  .officialKopSurat .kopHeaderText h2 { font-size: 9px !important; }
+  .officialKopSurat .kopContact { font-size: 6.5px !important; }
+  .officialSignatures .sigColumn { font-size: 8px !important; }
+  .officialSignatures .sigSpace { height: 52px !important; }
+}
+@media print {
+  html, body { background: #fff !important; }
+  .reportsPageContainer, .printableDocumentCard { width: 100% !important; max-width: none !important; }
+  .reportsToolbar, .reportsToolbar *, .noPrint, button, input, select, textarea,
+  .mobileTopBar, .mobileBottomNav, .sidebar, .pageHeader, .toastNotification {
+    display: none !important; visibility: hidden !important;
+  }
+  .officialKopSurat {
+    display: grid !important;
+    grid-template-columns: 104px minmax(0, 1fr) 104px !important;
+  }
+  .officialSignatures {
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100% !important;
+  }
+  .officialSignatures .sigColumn { width: 50% !important; }
+  .printableDocumentCard * {
+    visibility: visible;
   }
 }

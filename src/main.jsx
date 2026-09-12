@@ -3148,12 +3148,12 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
 <head><meta charset="utf-8"><title>Laporan Rekapitulasi Aset TIK</title>
 <style>
-  @page { size: A4 portrait; margin: 1.5cm; }
+  @page { size: A4 landscape; margin: 1.2cm; }
   body { font-family: Arial, sans-serif; font-size: 10pt; color: #000; }
   .kop { width: 100%; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 18px; }
   .kopTable, .signTable { width: 100%; border-collapse: collapse; }
   .kopTable td { border: 0; vertical-align: middle; }
-  .logo { width: 92px; height: 92px; object-fit: contain; }
+  .logo { width: 82px; height: 82px; object-fit: contain; }
   .kopText { text-align: center; }
   .kopText h3, .kopText h2, .kopText p { margin: 0; }
   .kopText h3 { font-size: 15pt; }
@@ -3173,7 +3173,7 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
 </style></head><body>
   <div class="kop"><table class="kopTable"><tr>
     <td style="width:110px;">${logoData ? `<img class="logo" src="${logoData}" />` : ''}</td>
-    <td class="kopText"><h3>PEMERINTAH KABUPATEN BATANG</h3><h2>DINAS KOMUNIKASI DAN INFORMATIKA</h2><p>Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id</p></td>
+    <td class="kopText"><h3>PEMERINTAH KABUPATEN BATANG</h3><h2>DINAS KOMUNIKASI DAN INFORMATIKA</h2><p>Jl. R.A. Kartini No. 1, Kabupaten Batang, Jawa Tengah 51215<br/>Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id</p></td>
     <td style="width:110px;"></td>
   </tr></table></div>
   <h3 class="title">LAPORAN REKAPITULASI INVENTARIS ASET TEKNOLOGI INFORMASI</h3>
@@ -3253,6 +3253,7 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
             <h3>PEMERINTAH KABUPATEN BATANG</h3>
             <h2>DINAS KOMUNIKASI DAN INFORMATIKA</h2>
             <p className="kopContact">
+              Jl. R.A. Kartini No. 1, Kabupaten Batang, Jawa Tengah 51215<br />
               Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id
             </p>
           </div>
