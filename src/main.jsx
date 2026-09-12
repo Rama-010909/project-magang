@@ -669,11 +669,12 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Service Worker dapat dipasang tanpa meminta izin notifikasi.
+  // Daftarkan Service Worker agar aplikasi siap menerima notifikasi latar belakang.
   useEffect(() => {
-    if (!login) return;
-    return () => {};
-  }, [login]);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/asset-notification-sw.js').catch(err => console.warn('PWA service worker:', err));
+    }
+  }, []);
 
   async function handleEnableNotifications() {
     setNotificationBusy(true);
@@ -1314,6 +1315,15 @@ function App() {
         >
           <Icons.Box />
           <span>Inventaris</span>
+        </button>
+
+        <button
+          className={`mobNavItem ${page === 'monitor' ? 'active' : ''}`}
+          onClick={() => go('monitor')}
+        >
+          <span className="mobNavIconWrap"><Icons.Monitor /></span>
+          <span>Monitoring</span>
+          {monitorAlertsCount > 0 && <span className="mobNavAlert">{monitorAlertsCount}</span>}
         </button>
 
         <button
@@ -3054,7 +3064,6 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
       'Serial Number',
       'IP Address',
       'MAC Address',
-      'Lokasi Penempatan',
       'Kondisi Fisik',
       'Status Operasional',
       'Keterangan'
@@ -3070,7 +3079,6 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
       a.serialNumber,
       a.ipAddress,
       a.macAddress,
-      a.lokasi,
       a.kondisi,
       a.status,
       a.keterangan
@@ -3145,7 +3153,6 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
               Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id
             </p>
           </div>
-          <img src={diskominfoLogo} alt="Logo Diskominfo" className="kopDiskominfoLogo" />
         </div>
         <div className="kopDoubleLine" />
 
@@ -3189,7 +3196,6 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
                 <th>Merk / Model</th>
                 <th>Nomor Seri (S/N)</th>
                 <th>IP Address</th>
-                <th>Lokasi Ruangan</th>
                 <th>Kondisi</th>
                 <th>Status</th>
               </tr>
@@ -3204,7 +3210,6 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
                   <td>{[a.merk, a.model].filter(Boolean).join(' ') || '-'}</td>
                   <td><code className="snCode">{a.serialNumber || '-'}</code></td>
                   <td>{a.ipAddress || '-'}</td>
-                  <td><MapsLink location={a.lokasi} latitude={a.latitude} longitude={a.longitude}>{a.lokasi || (a.latitude && a.longitude ? `${a.latitude}, ${a.longitude}` : '-')}</MapsLink></td>
                   <td className="textCenter">{a.kondisi}</td>
                   <td className="textCenter">
                     <span className={`printStatusTag ${a.status.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -3215,36 +3220,13 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
               ))}
               {!filtered.length && (
                 <tr>
-                  <td colSpan={10} className="tableEmpty">
+                  <td colSpan={9} className="tableEmpty">
                     Tidak ada data aset yang sesuai dengan filter laporan.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* PETA LOKASI ASET — DI BAWAH TABEL, SEMUA TITIK DITAMPILKAN */}
-        <div className="reportMapSection noPrint">
-          <div className="reportMapSectionHeader">
-            <div>
-              <span className="qKey">Peta Lokasi Aset</span>
-              <b>Seluruh titik aset pada laporan</b>
-              <small>Klik penanda pada peta untuk melihat perangkat. Tidak perlu memilih lokasi dari dropdown.</small>
-            </div>
-            <span className="mapAssetCount">{filtered.filter(a => a.latitude && a.longitude).length} titik lokasi</span>
-          </div>
-          {filtered.some(a => a.latitude && a.longitude) ? (
-            <div className="reportMapContent">
-              <InteractiveMap markers={filtered} />
-              <div className="reportMapLegend">
-                <span>Penanda dapat diklik untuk melihat detail aset.</span>
-                <span>Lokasi tersimpan dari titik yang dipilih saat tambah/edit perangkat.</span>
-              </div>
-            </div>
-          ) : (
-            <div className="reportMapEmpty">Belum ada aset yang memiliki titik koordinat. Tentukan titik lokasi melalui menu Tambah atau Edit Perangkat.</div>
-          )}
         </div>
 
         {/* TANDA TANGAN RESMI PENGESAHAN */}
