@@ -5285,3 +5285,58 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
     height: 116px !important;
   }
 }
+
+/* V54 — cetak dan ekspor dokumen lengkap */
+@media print {
+  .printableDocumentCard {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+  }
+  .tableScroll { overflow: visible !important; }
+  .officialSignatures {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    gap: 0 !important;
+    width: 100% !important;
+    padding: 0 12px !important;
+    margin-top: 38px !important;
+    page-break-inside: avoid !important;
+  }
+  .officialSignatures .sigColumn {
+    width: 50% !important;
+    flex: 0 0 50% !important;
+    text-align: center !important;
+    padding: 0 12px !important;
+  }
+  .officialSignatures .sigSpace { height: 72px !important; }
+  .officialKopSurat {
+    display: grid !important;
+    grid-template-columns: 112px minmax(0, 1fr) 112px !important;
+    flex-direction: row !important;
+  }
+  .officialKopSurat .kopEmblemBatang {
+    width: 124px !important;
+    height: 124px !important;
+  }
+  .officialKopSurat .kopHeaderText { text-align: center !important; }
+}
+
+/* Logo kop sedikit lebih besar, tetap proporsional */
+.officialKopSurat .kopEmblemBatang {
+  width: 124px !important;
+  height: 124px !important;
+  object-fit: contain !important;
+}
+@media (max-width: 768px) {
+  .officialKopSurat .kopEmblemBatang {
+    width: 76px !important;
+    height: 76px !important;
+  }
+}

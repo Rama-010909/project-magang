@@ -3117,19 +3117,74 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function exportWord() {
+  async function blobToDataUrl(blob) {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function exportWord() {
     const rows = filtered.map((a, i) => `
       <tr>
         <td>${i + 1}</td><td>${escapeHtml(a.kodeAset)}</td><td>${escapeHtml(a.nama)}</td>
         <td>${escapeHtml(a.kategori)}</td><td>${escapeHtml([a.merk, a.model].filter(Boolean).join(' ') || '-')}</td>
         <td>${escapeHtml(a.serialNumber || '-')}</td><td>${escapeHtml(a.ipAddress || '-')}</td>
-        <td>${escapeHtml(a.kondisi || '-')}</td><td>${escapeHtml(a.status || '-')}</td>
+        <td>${escapeHtml(a.lokasi || '-')}</td><td>${escapeHtml(a.kondisi || '-')}</td><td>${escapeHtml(a.status || '-')}</td>
+        <td>${escapeHtml(a.keterangan || '-')}</td>
       </tr>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Laporan Aset IT</title>
-      <style>body{font-family:Arial,sans-serif;font-size:10pt}h1,h2,p{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:5px}th{background:#e5e7eb}</style>
-      </head><body><h2>PEMERINTAH KABUPATEN BATANG</h2><h1>DINAS KOMUNIKASI DAN INFORMATIKA</h1>
-      <p>LAPORAN REKAPITULASI INVENTARIS ASET TEKNOLOGI INFORMASI</p>
-      <p>Per tanggal: ${escapeHtml(printDate)}</p><table><thead><tr><th>No</th><th>Kode Aset</th><th>Nama Perangkat</th><th>Kategori</th><th>Merk / Model</th><th>Nomor Seri</th><th>IP Address</th><th>Kondisi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+
+    let logoData = '';
+    try {
+      const response = await fetch(pemkabLogo);
+      if (response.ok) logoData = await blobToDataUrl(await response.blob());
+    } catch (error) {
+      console.warn('Logo laporan tidak dapat disematkan ke Word:', error);
+    }
+
+    const html = `<!doctype html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+<head><meta charset="utf-8"><title>Laporan Rekapitulasi Aset TIK</title>
+<style>
+  @page { size: A4 portrait; margin: 1.5cm; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #000; }
+  .kop { width: 100%; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 18px; }
+  .kopTable, .signTable { width: 100%; border-collapse: collapse; }
+  .kopTable td { border: 0; vertical-align: middle; }
+  .logo { width: 92px; height: 92px; object-fit: contain; }
+  .kopText { text-align: center; }
+  .kopText h3, .kopText h2, .kopText p { margin: 0; }
+  .kopText h3 { font-size: 15pt; }
+  .kopText h2 { font-size: 19pt; margin-top: 3px; }
+  .kopText p { font-size: 8.5pt; margin-top: 5px; }
+  h3.title { text-align: center; text-decoration: underline; margin: 18px 0 5px; font-size: 12pt; }
+  p.subtitle { text-align: center; font-weight: bold; margin: 0 0 15px; }
+  .summary { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  .summary td { border: 1px solid #999; padding: 6px; text-align: center; }
+  table.data { width: 100%; border-collapse: collapse; }
+  table.data th, table.data td { border: 1px solid #555; padding: 5px; vertical-align: top; }
+  table.data th { background: #e5e7eb; text-align: center; }
+  .signTable { margin-top: 48px; }
+  .signTable td { width: 50%; text-align: center; vertical-align: top; border: 0; padding: 0 20px; }
+  .space { height: 75px; }
+  .nip { font-size: 9pt; }
+</style></head><body>
+  <div class="kop"><table class="kopTable"><tr>
+    <td style="width:110px;">${logoData ? `<img class="logo" src="${logoData}" />` : ''}</td>
+    <td class="kopText"><h3>PEMERINTAH KABUPATEN BATANG</h3><h2>DINAS KOMUNIKASI DAN INFORMATIKA</h2><p>Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id</p></td>
+    <td style="width:110px;"></td>
+  </tr></table></div>
+  <h3 class="title">LAPORAN REKAPITULASI INVENTARIS ASET TEKNOLOGI INFORMASI</h3>
+  <p class="subtitle">Bidang Teknologi Informasi dan Komunikasi (TIK) • Per tanggal: ${escapeHtml(printDate)}</p>
+  <table class="summary"><tr><td>Total Perangkat: <b>${counts.total} unit</b></td><td>Beroperasi Normal: <b>${counts.aktif} unit</b></td><td>Maintenance: <b>${counts.maint} unit</b></td><td>Rusak: <b>${counts.rusak} unit</b></td></tr></table>
+  <table class="data"><thead><tr><th>No</th><th>Kode Aset</th><th>Nama Perangkat</th><th>Kategori</th><th>Merk / Model</th><th>Nomor Seri</th><th>IP Address</th><th>Lokasi</th><th>Kondisi</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${rows}</tbody></table>
+  <table class="signTable"><tr>
+    <td>Mengetahui,<br><b>Kepala Dinas Komunikasi dan Informatika<br>Kabupaten Batang</b><div class="space"></div><b>...................................................</b><br><span class="nip">NIP. ...........................................</span></td>
+    <td>Batang, ${escapeHtml(printDate)}<br><b>Pengurus Barang Pengguna /<br>Penatausahaan Aset TIK</b><div class="space"></div><b>...................................................</b><br><span class="nip">NIP. ...........................................</span></td>
+  </tr></table>
+</body></html>`;
     downloadFile(html, `Laporan_Aset_IT_Diskominfo_Batang_${new Date().toISOString().slice(0,10)}.doc`, 'application/msword');
   }
 
