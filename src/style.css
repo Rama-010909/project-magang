@@ -3953,3 +3953,187 @@ code {
 
   .loginHeader { margin-bottom: 21px; }
 }
+
+
+/* FINAL LOGO POLISH — unified, clean logo presentation */
+.loginLogosRow {
+  position: relative;
+  width: 100%;
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 4px 6px;
+  margin-bottom: 18px;
+}
+
+.loginFullLogoBox {
+  width: 258px;
+  max-width: 100%;
+  height: 62px;
+  min-height: 62px;
+  flex: 0 1 258px;
+  padding: 2px 4px;
+  background: #fff;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.loginFullLogoImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.loginDiskominfoBox {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  flex: 0 0 58px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 5px 14px rgba(15,23,42,.08);
+  overflow: hidden;
+}
+
+.loginDiskominfoImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+/* Logo preview modal */
+.logoPreviewOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(3, 12, 26, .78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: logoPreviewFade .2s ease-out;
+}
+
+.logoPreviewCard {
+  position: relative;
+  width: min(760px, 94vw);
+  max-height: min(88vh, 820px);
+  padding: 22px;
+  border: 1px solid rgba(255,255,255,.78);
+  border-radius: 24px;
+  background: rgba(255,255,255,.98);
+  box-shadow: 0 30px 90px rgba(0,0,0,.38);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  animation: logoPreviewUp .24s ease-out;
+}
+
+.logoPreviewMedia {
+  width: 100%;
+  min-height: 240px;
+  max-height: 66vh;
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #e8eef6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.logoPreviewImage {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 58vh;
+  object-fit: contain;
+}
+
+.logoPreviewTitle {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.35;
+  padding: 0 38px;
+}
+
+.logoPreviewHint {
+  color: #64748b;
+  font-size: 11px;
+  text-align: center;
+}
+
+.logoPreviewClose {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: rgba(255,255,255,.94);
+  color: #334155;
+  font-size: 25px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 5px 16px rgba(15,23,42,.10);
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease, color .18s ease;
+}
+
+.logoPreviewClose:hover {
+  transform: scale(1.05);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+@keyframes logoPreviewFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes logoPreviewUp { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+@media (max-width: 520px) {
+  .loginLogosRow {
+    gap: 10px;
+    min-height: 62px;
+    margin-bottom: 15px;
+  }
+
+  .loginFullLogoBox {
+    width: 220px;
+    flex-basis: 220px;
+    height: 56px;
+    min-height: 56px;
+    padding: 1px 2px;
+  }
+
+  .loginDiskominfoBox {
+    width: 54px;
+    height: 54px;
+    min-width: 54px;
+    flex-basis: 54px;
+    border-radius: 13px;
+  }
+
+  .logoPreviewOverlay { padding: 12px; }
+  .logoPreviewCard { width: 96vw; padding: 14px; border-radius: 20px; }
+  .logoPreviewMedia { min-height: 200px; max-height: 68vh; padding: 18px; }
+  .logoPreviewImage { max-width: 100%; max-height: 56vh; }
+  .logoPreviewTitle { font-size: 14px; padding: 0 30px; }
+  .logoPreviewHint { font-size: 10px; }
+  .logoPreviewClose { top: 9px; right: 9px; width: 34px; height: 34px; border-radius: 10px; }
+}

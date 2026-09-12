@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import pemkabLogo from './assets/pemkab-batang.png';
-import pemkabFullLogo from './assets/pemkab-batang-official.png';
+import pemkabFullLogo from './assets/pemkab-batang-clean.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
 import './style.css';
 
@@ -407,8 +407,11 @@ function ClickableLogo({ src, alt, className, wrapperClassName = '' }) {
         <div className="logoPreviewOverlay" onMouseDown={e => e.target === e.currentTarget && setOpen(false)}>
           <div className="logoPreviewCard">
             <button type="button" className="logoPreviewClose" onClick={() => setOpen(false)} aria-label="Tutup">×</button>
-            <img src={src} alt={alt} className="logoPreviewImage" />
-            <b>{alt}</b>
+            <div className="logoPreviewMedia">
+              <img src={src} alt={alt} className="logoPreviewImage" />
+            </div>
+            <div className="logoPreviewTitle">{alt}</div>
+            <div className="logoPreviewHint">Klik di luar area untuk menutup</div>
           </div>
         </div>
       )}
