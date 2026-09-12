@@ -1,8 +1,7 @@
-# IT Asset Management Diskominfo Batang — V51
+# IT Asset Management Diskominfo Batang — V52
 
 Perbaikan:
-- Logo Pemkab pada laporan menggunakan file logo yang diberikan pengguna tanpa pembesaran berlebihan.
-- Ukuran logo laporan dikembalikan lebih proporsional.
-- Penyelarasan teks, label, input, select, textarea, dan tombol formulir agar lebih presisi.
-- Perbaikan responsif formulir pada HP.
-- Fitur dan perubahan versi sebelumnya tetap dipertahankan.
+- Logo Pemkab pada laporan menggunakan logo transparan yang diberikan.
+- Ukuran logo sedikit diperbesar tanpa merusak proporsi.
+- Kop laporan menggunakan grid agar teks benar-benar berada di tengah halaman, tidak bergeser mengikuti ukuran logo.
+- Penataan kop tetap responsif pada HP.

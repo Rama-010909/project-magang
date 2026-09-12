@@ -5189,3 +5189,48 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .formFooterActions { grid-template-columns: 1fr; }
   .formFooterActions button { min-height: 42px; }
 }
+
+/* V52 — kop surat lebih presisi dan logo sedikit diperbesar */
+.officialKopSurat {
+  display: grid !important;
+  grid-template-columns: 112px minmax(0, 1fr) 112px;
+  align-items: center !important;
+  gap: 12px !important;
+  text-align: center !important;
+}
+.officialKopSurat::after {
+  content: "";
+  display: block;
+}
+.officialKopSurat .kopEmblemBatang {
+  grid-column: 1;
+  justify-self: center;
+  width: 104px !important;
+  height: 104px !important;
+  object-fit: contain !important;
+  display: block;
+}
+.officialKopSurat .kopHeaderText {
+  grid-column: 2;
+  min-width: 0;
+  width: 100%;
+  text-align: center;
+}
+.officialKopSurat .kopHeaderText h3,
+.officialKopSurat .kopHeaderText h2,
+.officialKopSurat .kopContact {
+  text-align: center;
+}
+@media (max-width: 768px) {
+  .officialKopSurat {
+    grid-template-columns: 66px minmax(0, 1fr) 10px !important;
+    gap: 7px !important;
+  }
+  .officialKopSurat .kopEmblemBatang {
+    width: 62px !important;
+    height: 62px !important;
+  }
+  .officialKopSurat .kopHeaderText h3 { font-size: 13px !important; }
+  .officialKopSurat .kopHeaderText h2 { font-size: 11px !important; }
+  .officialKopSurat .kopContact { font-size: 8px !important; }
+}
