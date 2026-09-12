@@ -1,11 +1,14 @@
-# V43 — Blank Fix + UI Polish
+# IT Asset Management — Diskominfo Kabupaten Batang (V44)
 
-Perbaikan dari V42:
-- Menghilangkan dependensi Leaflet dari runtime React untuk mencegah halaman blank setelah login.
-- Peta laporan tetap tersedia menggunakan OpenStreetMap embed yang aman; daftar titik lokasi tetap bisa dibuka ke Google Maps.
-- Service Worker push tidak dipanggil otomatis saat login; notifikasi foreground tetap tersedia tanpa Environment Variables/Vercel Pro.
-- Ikon mata password diperbaiki agar tidak terpotong.
-- Favicon/tab browser dibuat sebagai ikon persegi yang rapi.
-- Firestore tetap menjadi sumber data.
+Perbaikan V44:
+- Memperbaiki blank putih setelah login: menambahkan `Icons.Monitor` yang sebelumnya direferensikan tetapi belum didefinisikan, penyebab React error #130 pada halaman setelah login.
+- Memperbaiki tombol mata password agar ikon utuh, terpusat, dan tidak terpotong.
+- Favicon browser menggunakan lambang Kabupaten Batang dengan latar transparan.
+- Tetap memakai React + Vite + Firebase Firestore + Vercel Blob seperti versi sebelumnya.
 
-Vercel: Framework Other, install `npm install`, build `npm run build`, output `dist`.
+Deploy Vercel (sesuai pengaturan yang dipakai):
+- Framework Preset: Other
+- Install Command: npm install
+- Build Command: npm run build
+- Output Directory: dist
+- Tidak perlu Vercel Pro.

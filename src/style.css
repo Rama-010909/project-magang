@@ -4877,3 +4877,26 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 .interactiveMapFallback svg{width:26px;height:26px;color:#2563eb;flex:0 0 auto}.interactiveMapFallback div{display:flex;flex-direction:column;gap:4px}.interactiveMapFallback b{font-size:13px;color:var(--slate-700)}.interactiveMapFallback span{font-size:10px}
 .togglePassBtn{overflow:visible!important;line-height:0!important;flex:0 0 36px!important}.togglePassBtn svg{display:block;width:20px!important;height:20px!important;overflow:visible!important}
 @media(max-width:640px){.interactiveMapFrame{height:250px}.mapMarkerList{grid-template-columns:1fr}.interactiveMapFallback{min-height:180px}}
+
+/* V44 — final blank-screen + password-eye polish */
+.togglePassBtn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  right: 8px !important;
+  width: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+.togglePassBtn svg {
+  display: block !important;
+  width: 21px !important;
+  height: 21px !important;
+  min-width: 21px !important;
+  min-height: 21px !important;
+  overflow: visible !important;
+  stroke-width: 2 !important;
+}
+
+/* Favicon uses a transparent Batang crest; no white square is drawn by CSS. */
