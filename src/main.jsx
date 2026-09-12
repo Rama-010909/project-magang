@@ -435,6 +435,47 @@ function MapsLink({ location, latitude, longitude, children }) {
   );
 }
 
+function InteractiveMap({ markers = [] }) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+    const map = L.map(mapRef.current, { scrollWheelZoom: true, zoomControl: true }).setView([-6.9000, 109.7330], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+    mapInstanceRef.current = map;
+    layerRef.current = L.layerGroup().addTo(map);
+    setTimeout(() => map.invalidateSize(), 100);
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      layerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const layer = layerRef.current;
+    if (!map || !layer) return;
+    layer.clearLayers();
+    const points = markers.filter(a => Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude)));
+    points.forEach(a => {
+      const marker = L.marker([Number(a.latitude), Number(a.longitude)]).addTo(layer);
+      marker.bindPopup(`<b>${String(a.nama || 'Perangkat')}</b><br>${String(a.kodeAset || '')}<br>${String(a.lokasi || `${a.latitude}, ${a.longitude}`)}`);
+    });
+    if (points.length === 1) map.setView([Number(points[0].latitude), Number(points[0].longitude)], 16);
+    else if (points.length > 1) map.fitBounds(points.map(a => [Number(a.latitude), Number(a.longitude)]), { padding: [30, 30] });
+    else map.setView([-6.9000, 109.7330], 12);
+    setTimeout(() => map.invalidateSize(), 100);
+  }, [markers]);
+
+  return <div ref={mapRef} className="interactiveMap" aria-label="Peta lokasi aset" />;
+}
+
 function GoogleMapPreview({ location, latitude = '', longitude = '', compact = false }) {
   const embed = mapsEmbedUrl(location, latitude, longitude);
   if (!embed) {
