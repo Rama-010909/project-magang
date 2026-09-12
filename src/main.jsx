@@ -220,6 +220,8 @@ const EMPTY_FORM = {
   ipAddress: '',
   macAddress: '',
   lokasi: '',
+  latitude: '',
+  longitude: '',
   kondisi: 'Baik',
   status: 'Aktif',
   keterangan: '',
@@ -383,16 +385,113 @@ const Icons = {
 // ==========================================
 // HELPER UI — LOGO PREVIEW & GOOGLE MAPS
 // ==========================================
-function mapsUrl(location) {
-  return location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}` : '#';
+function mapsUrl(location, latitude = '', longitude = '') {
+  const query = latitude && longitude ? `${latitude},${longitude}` : location;
+  return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : '#';
 }
 
-function MapsLink({ location, children }) {
-  if (!location) return <>{children || 'Lokasi belum diisi'}</>;
+function mapsEmbedUrl(location, latitude = '', longitude = '') {
+  const query = latitude && longitude ? `${latitude},${longitude}` : location;
+  return query ? `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed` : '';
+}
+
+function MapsLink({ location, latitude, longitude, children }) {
+  if (!location && !(latitude && longitude)) return <>{children || 'Lokasi belum diisi'}</>;
   return (
-    <a className="mapsLink" href={mapsUrl(location)} target="_blank" rel="noreferrer" title="Buka lokasi di Google Maps">
-      {children || location}
+    <a className="mapsLink" href={mapsUrl(location, latitude, longitude)} target="_blank" rel="noreferrer" title="Buka lokasi di Google Maps">
+      {children || location || `${latitude}, ${longitude}`}
     </a>
+  );
+}
+
+function GoogleMapPreview({ location, latitude = '', longitude = '', compact = false }) {
+  const embed = mapsEmbedUrl(location, latitude, longitude);
+  if (!embed) {
+    return (
+      <div className={`mapPreviewEmpty ${compact ? 'compact' : ''}`}>
+        <Icons.MapPin />
+        <span>Isi lokasi untuk menampilkan penanda di Google Maps.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={`googleMapPreview ${compact ? 'compact' : ''}`}>
+      <iframe
+        title="Peta lokasi aset"
+        src={embed}
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+    </div>
+  );
+}
+
+function LocationPicker({ value, latitude = '', longitude = '', onChange }) {
+  const [query, setQuery] = useState(value || '');
+  const [mapLocation, setMapLocation] = useState(value || '');
+  const [mapLat, setMapLat] = useState(latitude || '');
+  const [mapLng, setMapLng] = useState(longitude || '');
+
+  useEffect(() => {
+    setQuery(value || '');
+    setMapLocation(value || '');
+    setMapLat(latitude || '');
+    setMapLng(longitude || '');
+  }, [value, latitude, longitude]);
+
+  function applyLocation() {
+    const text = query.trim();
+    setMapLocation(text);
+    setMapLat('');
+    setMapLng('');
+    onChange({ lokasi: text, latitude: '', longitude: '' });
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      alert('Browser ini tidak mendukung lokasi perangkat.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const lat = coords.latitude.toFixed(6);
+        const lng = coords.longitude.toFixed(6);
+        setMapLat(lat);
+        setMapLng(lng);
+        setMapLocation(`${lat}, ${lng}`);
+        setQuery(`${lat}, ${lng}`);
+        onChange({ lokasi: `${lat}, ${lng}`, latitude: lat, longitude: lng });
+      },
+      () => alert('Lokasi perangkat tidak dapat diambil. Pastikan izin lokasi browser sudah diberikan.')
+    );
+  }
+
+  const hasLocation = query.trim() || mapLocation || (mapLat && mapLng);
+
+  return (
+    <div className="locationPicker">
+      <div className="locationInputRow">
+        <input
+          type="text"
+          placeholder="Cari alamat / ruangan, mis. Kantor Diskominfo Batang"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyLocation(); } }}
+        />
+        <button type="button" className="btnLight mapActionBtn" onClick={applyLocation}>
+          <Icons.MapPin />
+          <span>Tampilkan Peta</span>
+        </button>
+      </div>
+      <div className="locationPickerActions">
+        <button type="button" className="mapTextBtn" onClick={useMyLocation}>Gunakan lokasi perangkat</button>
+        {hasLocation && (
+          <a className="mapTextBtn" href={mapsUrl(mapLocation || query, mapLat, mapLng)} target="_blank" rel="noreferrer">Buka Google Maps</a>
+        )}
+      </div>
+      <GoogleMapPreview location={mapLocation || query} latitude={mapLat} longitude={mapLng} />
+      <span className="fieldHelper">Peta akan menampilkan penanda berdasarkan alamat atau koordinat yang dipilih. Untuk titik GPS yang lebih presisi, gunakan tombol lokasi perangkat.</span>
+    </div>
   );
 }
 
@@ -1692,11 +1791,10 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
       // 1. Coba upload ke endpoint /api/upload terlebih dahulu
       let uploadedUrl = '';
       try {
-        const fd = new FormData();
-        fd.append('file', file);
         const res = await fetch('/api/upload', {
           method: 'POST',
-          body: fd
+          headers: { 'content-type': file.type || 'application/octet-stream' },
+          body: file
         });
         if (res.ok) {
           const data = await res.json();
@@ -1826,15 +1924,15 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
             />
           </label>
 
-          <label className="formField">
+          <div className="formField fullWidth">
             <span className="fieldLabel">Lokasi / Ruangan Penempatan</span>
-            <input
-              type="text"
-              placeholder="Contoh: Ruang Server Lt. 2 / Bidang IKP"
+            <LocationPicker
               value={form.lokasi}
-              onChange={e => setForm({ ...form, lokasi: e.target.value })}
+              latitude={form.latitude}
+              longitude={form.longitude}
+              onChange={loc => setForm({ ...form, ...loc })}
             />
-          </label>
+          </div>
 
           <label className="formField">
             <span className="fieldLabel">Kondisi Fisik</span>
@@ -2037,6 +2135,17 @@ function DetailModal({ asset, maintList, closeModal, onEdit, onDelete, addMainte
                     <b className="qVal">{asset.status}</b>
                   </div>
                 </div>
+              </div>
+
+              <div className="detailLocationMapPanel">
+                <div className="detailLocationMapHeader">
+                  <div>
+                    <span className="qKey">Peta Lokasi Perangkat</span>
+                    <b>{asset.lokasi || 'Lokasi belum ditentukan'}</b>
+                  </div>
+                  <MapsLink location={asset.lokasi} latitude={asset.latitude} longitude={asset.longitude}>Buka di Google Maps</MapsLink>
+                </div>
+                <GoogleMapPreview location={asset.lokasi} latitude={asset.latitude} longitude={asset.longitude} />
               </div>
 
               <div className="specDetailGrid">
@@ -2741,7 +2850,7 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
                   <td>{[a.merk, a.model].filter(Boolean).join(' ') || '-'}</td>
                   <td><code className="snCode">{a.serialNumber || '-'}</code></td>
                   <td>{a.ipAddress || '-'}</td>
-                  <td><MapsLink location={a.lokasi}>{a.lokasi || '-'}</MapsLink></td>
+                  <td><MapsLink location={a.lokasi} latitude={a.latitude} longitude={a.longitude}>{a.lokasi || (a.latitude && a.longitude ? `${a.latitude}, ${a.longitude}` : '-')}</MapsLink></td>
                   <td className="textCenter">{a.kondisi}</td>
                   <td className="textCenter">
                     <span className={`printStatusTag ${a.status.toLowerCase().replace(/\s+/g, '-')}`}>

@@ -4137,3 +4137,144 @@ code {
   .logoPreviewHint { font-size: 10px; }
   .logoPreviewClose { top: 9px; right: 9px; width: 34px; height: 34px; border-radius: 10px; }
 }
+
+/* =========================================================
+   V31 — LOGO FINAL + GOOGLE MAP LOCATION PICKER
+   ========================================================= */
+/* Government logo: white only as a neat logo backing, not a giant box. */
+.loginLogosRow { flex-direction: row !important; align-items: center !important; justify-content: center !important; gap: 10px !important; }
+.loginFullLogoBox {
+  width: 220px !important;
+  max-width: 220px !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  flex: 0 1 220px !important;
+  padding: 4px 10px !important;
+  background: #fff !important;
+  border: 1px solid #e5eaf1 !important;
+  border-radius: 11px !important;
+  box-shadow: 0 4px 12px rgba(15,23,42,.07) !important;
+  overflow: hidden !important;
+}
+.loginFullLogoImg { width: 100% !important; height: 42px !important; object-fit: contain !important; }
+
+/* Diskominfo keeps its original blue square — no extra white background. */
+.loginDiskominfoBox {
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  flex: 0 0 52px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+.loginDiskominfoImg { width: 52px !important; height: 52px !important; object-fit: cover !important; border-radius: 12px !important; display:block !important; }
+
+/* Better logo preview: compact, centered and proportional for both logos. */
+.logoPreviewOverlay {
+  background: rgba(2, 10, 23, .80) !important;
+  padding: 18px !important;
+}
+.logoPreviewCard {
+  width: min(520px, 92vw) !important;
+  max-height: 86vh !important;
+  padding: 18px !important;
+  border-radius: 22px !important;
+  gap: 10px !important;
+}
+.logoPreviewMedia {
+  width: 100% !important;
+  min-height: 180px !important;
+  max-height: 62vh !important;
+  padding: 22px !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+}
+.logoPreviewImage {
+  width: auto !important;
+  max-width: min(390px, 82vw) !important;
+  max-height: 48vh !important;
+  object-fit: contain !important;
+  border-radius: 10px !important;
+}
+.logoPreviewTitle { font-size: 15px !important; font-weight: 800 !important; }
+.logoPreviewHint { font-size: 10px !important; }
+.logoPreviewClose { width: 36px !important; height: 36px !important; border-radius: 11px !important; font-size: 23px !important; }
+
+/* Google Maps location picker */
+.locationPicker { width: 100%; }
+.locationInputRow { display:flex; gap:10px; align-items:stretch; }
+.locationInputRow > input { flex:1; min-width:0; }
+.mapActionBtn { flex:0 0 auto; white-space:nowrap; display:inline-flex; align-items:center; gap:7px; }
+.locationPickerActions { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; align-items:center; }
+.mapTextBtn {
+  border:0;
+  background:transparent;
+  padding:0;
+  color:var(--gov-blue-500, #2563eb);
+  font-size:12px;
+  font-weight:700;
+  text-decoration:none;
+  cursor:pointer;
+}
+.mapTextBtn:hover { text-decoration:underline; }
+.googleMapPreview {
+  width:100%;
+  height:260px;
+  margin-top:12px;
+  overflow:hidden;
+  border:1px solid #dbe4ef;
+  border-radius:15px;
+  background:#eef3f8;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.5);
+}
+.googleMapPreview iframe { width:100%; height:100%; border:0; display:block; }
+.googleMapPreview.compact { height:180px; }
+.mapPreviewEmpty {
+  min-height:110px;
+  margin-top:12px;
+  border:1px dashed #cbd5e1;
+  border-radius:15px;
+  background:#f8fafc;
+  color:#64748b;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  text-align:center;
+  padding:20px;
+  font-size:12px;
+}
+.detailLocationMapPanel {
+  margin-top:18px;
+  padding:15px;
+  border:1px solid #e2e8f0;
+  border-radius:17px;
+  background:rgba(248,250,252,.75);
+}
+.detailLocationMapHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.detailLocationMapHeader > div { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.detailLocationMapHeader b { color:#0f172a; font-size:13px; overflow:hidden; text-overflow:ellipsis; }
+.detailLocationMapHeader .mapsLink {
+  flex:0 0 auto;
+  padding:8px 11px;
+  border-radius:10px;
+  background:#eff6ff;
+  color:#1d4ed8;
+  font-size:11px;
+  font-weight:800;
+}
+
+@media (max-width: 640px) {
+  .loginFullLogoBox { width:195px !important; max-width:195px !important; flex-basis:195px !important; height:50px !important; min-height:50px !important; padding:4px 7px !important; }
+  .loginFullLogoImg { height:40px !important; }
+  .loginDiskominfoBox, .loginDiskominfoImg { width:50px !important; height:50px !important; min-width:50px !important; }
+  .locationInputRow { flex-direction:column; }
+  .mapActionBtn { width:100%; justify-content:center; }
+  .googleMapPreview { height:220px; }
+  .detailLocationMapHeader { align-items:flex-start; flex-direction:column; }
+  .detailLocationMapHeader .mapsLink { width:100%; text-align:center; }
+}
