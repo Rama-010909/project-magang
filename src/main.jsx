@@ -1305,7 +1305,7 @@ function App() {
           className={`mobNavItem ${page === 'dashboard' ? 'active' : ''}`}
           onClick={() => go('dashboard')}
         >
-          <Icons.Dashboard />
+          <span className="mobNavIconWrap"><Icons.Dashboard /></span>
           <span>Beranda</span>
         </button>
 
@@ -1313,7 +1313,7 @@ function App() {
           className={`mobNavItem ${page === 'inventaris' ? 'active' : ''}`}
           onClick={() => go('inventaris')}
         >
-          <Icons.Box />
+          <span className="mobNavIconWrap"><Icons.Box /></span>
           <span>Inventaris</span>
         </button>
 
@@ -1340,7 +1340,7 @@ function App() {
           className={`mobNavItem ${page === 'maintenance' ? 'active' : ''}`}
           onClick={() => go('maintenance')}
         >
-          <Icons.Wrench />
+          <span className="mobNavIconWrap"><Icons.Wrench /></span>
           <span>Servis</span>
         </button>
 
@@ -1348,7 +1348,7 @@ function App() {
           className={`mobNavItem ${page === 'laporan' ? 'active' : ''}`}
           onClick={() => go('laporan')}
         >
-          <Icons.FileText />
+          <span className="mobNavIconWrap"><Icons.FileText /></span>
           <span>Laporan</span>
         </button>
       </nav>
@@ -3146,9 +3146,6 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
           <div className="kopHeaderText">
             <h3>PEMERINTAH KABUPATEN BATANG</h3>
             <h2>DINAS KOMUNIKASI DAN INFORMATIKA</h2>
-            <p className="kopAddress">
-              Jl. RA. Kartini No. 1, Kauman, Kec. Batang, Kabupaten Batang, Jawa Tengah 51215
-            </p>
             <p className="kopContact">
               Telepon: (0285) 391060 • Laman: diskominfo.batangkab.go.id • Pos-el: diskominfo@batangkab.go.id
             </p>

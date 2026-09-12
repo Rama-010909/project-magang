@@ -5056,3 +5056,136 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .loginCard { border-radius: 24px; padding: 28px 22px 22px; }
   .loginGlowOrb { width: 250px; height: 250px; }
 }
+
+
+/* V50 — logo resmi baru dan penyelarasan layout mobile/form */
+* { box-sizing: border-box; }
+
+.officialKopSurat {
+  align-items: center;
+  gap: 16px;
+}
+.officialKopSurat .kopEmblemBatang {
+  width: 85px !important;
+  height: 85px !important;
+  flex: 0 0 85px;
+  object-fit: contain !important;
+  background: transparent !important;
+}
+
+.formGrid {
+  width: 100%;
+  align-items: start;
+}
+.formField {
+  min-width: 0;
+  width: 100%;
+}
+.formField input,
+.formField select,
+.formField textarea,
+.inputGroup input,
+.inputGroup select,
+.inputGroup textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.formRowTwo {
+  width: 100%;
+  min-width: 0;
+}
+
+.mobNavItem {
+  min-width: 0 !important;
+  flex: 1 1 0 !important;
+  overflow: visible;
+  line-height: 1.15;
+  text-align: center;
+}
+.mobNavIconWrap {
+  width: 28px !important;
+  height: 25px !important;
+  display: grid !important;
+  place-items: center !important;
+  flex: 0 0 25px;
+}
+.mobNavIconWrap svg {
+  width: 18px !important;
+  height: 18px !important;
+  display: block;
+}
+.mobNavAlert { right: 3px !important; top: 1px !important; }
+
+@media (max-width: 768px) {
+  .officialKopSurat {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px !important;
+    text-align: center;
+  }
+  .officialKopSurat .kopEmblemBatang {
+    width: 58px !important;
+    height: 58px !important;
+    flex-basis: 58px;
+  }
+  .kopHeaderText { min-width: 0; }
+  .kopHeaderText h3 { font-size: 13px !important; line-height: 1.25; }
+  .kopHeaderText h2 { font-size: 11px !important; line-height: 1.25; }
+  .kopContact { font-size: 8px !important; line-height: 1.35; }
+  .mobileBottomNav {
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: space-between !important;
+    gap: 3px !important;
+  }
+  .mobNavItem {
+    justify-content: center !important;
+    gap: 2px !important;
+    padding: 4px 0 !important;
+    font-size: 8px !important;
+  }
+}
+@media (max-width: 380px) {
+  .mobNavItem { font-size: 7.4px !important; }
+  .mobNavIconWrap { width: 25px !important; }
+  .mobNavIconWrap svg { width: 16px !important; height: 16px !important; }
+}
+
+
+/* V51 — penyelarasan formulir agar teks dan kontrol presisi */
+.formHeader > div { min-width: 0; }
+.formTitleText, .formSubtitle, .fieldLabel, .fieldHelper { overflow-wrap: anywhere; }
+.formTitleText { line-height: 1.3; margin: 0; }
+.formSubtitle { line-height: 1.55; margin-bottom: 0; }
+.formReqHint { white-space: normal; line-height: 1.4; text-align: right; }
+.formGrid { align-items: start; }
+.formField { min-width: 0; align-self: start; }
+.formField input,
+.formField select,
+.formField textarea {
+  display: block;
+  font: inherit;
+  line-height: 1.35;
+  margin: 0;
+}
+.formField input,
+.formField select { min-height: 42px; }
+.formField textarea { min-height: 104px; resize: vertical; }
+.fieldLabel { display: block; line-height: 1.4; min-height: 17px; }
+.fieldHelper { display: block; line-height: 1.4; min-height: 0; }
+.formFooterActions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 768px) {
+  .assetFormCard { padding: 22px 18px !important; }
+  .formHeader { gap: 10px !important; }
+  .formReqHint { align-self: flex-start; text-align: left; }
+  .formField input, .formField select { min-height: 44px; }
+  .formField textarea { min-height: 112px; }
+  .formFooterActions { display: grid; grid-template-columns: 1fr 1fr; }
+  .formFooterActions button { width: 100%; justify-content: center; }
+}
+@media (max-width: 420px) {
+  .formFooterActions { grid-template-columns: 1fr; }
+  .formFooterActions button { min-height: 42px; }
+}
