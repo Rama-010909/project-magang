@@ -1,10 +1,7 @@
-# IT Asset Management Diskominfo Batang — V52
+# V58 — Laporan, Cetak, dan Login Eye Fix
 
-Perbaikan:
-- Logo Pemkab pada laporan menggunakan logo transparan yang diberikan.
-- Ukuran logo sedikit diperbesar tanpa merusak proporsi.
-- Kop laporan menggunakan grid agar teks benar-benar berada di tengah halaman, tidak bergeser mengikuti ukuran logo.
-- Penataan kop tetap responsif pada HP.
-
-
-V56: kop laporan memakai keterangan lokasi yang tidak mengarang nomor jalan: Kabupaten Batang, Jawa Tengah.
+Perubahan:
+- Pilihan laporan disederhanakan menjadi **Download Laporan** dan **Cetak**.
+- Download laporan tetap berisi dokumen lengkap dengan kop, rekap, tabel, dan tanda tangan.
+- Cetak menggunakan A4 landscape, tabel dibuat responsif agar tidak terpotong, dan tombol/bekas kontrol disembunyikan.
+- Tombol mata password diperbaiki agar tidak tertutup atau terpotong.

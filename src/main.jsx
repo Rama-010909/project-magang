@@ -3225,21 +3225,13 @@ function ReportsView({ assets, counts, pemkabLogo, pemkabFullLogo, diskominfoLog
         </div>
 
         <div className="reportsToolbarRight">
-          <button className="btnLight" onClick={exportWord}>
+          <button className="btnLight reportActionBtn" onClick={exportWord}>
             <Icons.Download />
-            <span>Word</span>
+            <span>Download Laporan</span>
           </button>
-          <button className="btnLight" onClick={exportExcel}>
-            <Icons.Download />
-            <span>Excel</span>
-          </button>
-          <button className="btnLight" onClick={exportCSV}>
-            <Icons.Download />
-            <span>CSV</span>
-          </button>
-          <button className="btnPrimary" onClick={printReport}>
+          <button className="btnPrimary reportActionBtn" onClick={printReport}>
             <Icons.Printer />
-            <span>Cetak Dokumen Resmi / PDF</span>
+            <span>Cetak</span>
           </button>
         </div>
       </div>
