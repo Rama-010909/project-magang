@@ -6,7 +6,7 @@ const VAPID_KEY = 'BJUtN9rNIvbZiWVGgmEk-acXNUk0QZ8efxYC-RNMXp18ecH-ovVa8sO7tBSq0
 
 export async function registerNotificationServiceWorker() {
   if (!('serviceWorker' in navigator)) throw new Error('Browser tidak mendukung Service Worker.');
-  return navigator.serviceWorker.register('/asset-notification-sw.js');
+  return navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
 }
 
 export async function enableAssetNotifications() {
@@ -16,6 +16,7 @@ export async function enableAssetNotifications() {
   const supported = await isSupported().catch(() => false);
   if (!supported) throw new Error('FCM Web tidak didukung oleh browser ini.');
   const registration = await registerNotificationServiceWorker();
+  await registration.update().catch(() => {});
   const messaging = getMessaging(app);
   const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
   if (!token) throw new Error('Token perangkat belum berhasil dibuat.');
