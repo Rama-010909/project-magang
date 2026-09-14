@@ -27,8 +27,27 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
   const response = await getMessaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
-    data: { assetId: String(event.params.assetId), status: current, title, body, url: '/' },
-    webpush: { fcmOptions: { link: '/' }, notification: { icon: '/favicon.png', badge: '/favicon.png', tag: `asset-${event.params.assetId}`, requireInteraction: trouble } }
+    data: {
+      assetId: String(event.params.assetId),
+      assetName: String(after.nama || after.name || after.assetName || 'Perangkat'),
+      status: current,
+      title,
+      body,
+      url: '/'
+    },
+    webpush: {
+      headers: { Urgency: trouble ? 'high' : 'normal' },
+      fcmOptions: { link: '/' },
+      notification: {
+        title,
+        body,
+        icon: '/favicon.png',
+        badge: '/favicon.png',
+        tag: `asset-${event.params.assetId}`,
+        renotify: true,
+        requireInteraction: trouble
+      }
+    }
   });
 
   const invalid = [];
