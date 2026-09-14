@@ -1238,6 +1238,7 @@ function App() {
             setSortBy={setSortBy}
             viewMode={viewMode}
             setViewMode={setViewMode}
+            monitorStates={agentMonitorStates}
             openEdit={openEdit}
             removeAsset={removeAsset}
             onOpenDetail={a => {
@@ -1449,6 +1450,23 @@ function NotificationSettingsModal({ enabled, trouble, maintenance, busy, onEnab
 // ==========================================
 // KOMPONEN STATUS CHIP
 // ==========================================
+function getLiveAssetStatus(asset, monitorStates) {
+  const st = monitorStates?.[asset.id];
+  if (!st || typeof st.online !== 'boolean') return asset.status || 'Aktif';
+
+  // Agent berjalan tiap 30 detik. Jika data terlalu lama, jangan menganggap
+  // perangkat mati hanya karena PC monitor/agent sedang offline.
+  const checkedAt = st.checkedAt ? new Date(st.checkedAt).getTime() : 0;
+  const fresh = checkedAt > 0 && (Date.now() - checkedAt) <= 120000;
+  if (!fresh) return asset.status || 'Aktif';
+
+  if (st.online === false || st.status === 'device_trouble') return 'Trouble';
+  if (st.status === 'internet_trouble') return 'Internet Trouble';
+  if (st.status === 'network_trouble') return 'Network Trouble';
+  if (st.online === true) return 'Aktif';
+  return asset.status || 'Aktif';
+}
+
 function StatusChip({ status }) {
   const s = status || 'Aktif';
   const cls = s.toLowerCase().replace(/\s+/g, '-');
@@ -1819,6 +1837,7 @@ function InventoryView({
   setSortBy,
   viewMode,
   setViewMode,
+  monitorStates,
   openEdit,
   removeAsset,
   onOpenDetail,
@@ -1938,7 +1957,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <StatusChip status={a.status} />
+                  <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
                 </div>
               </div>
 
@@ -2076,7 +2095,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <StatusChip status={a.status} />
+                      <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">

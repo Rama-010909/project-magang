@@ -658,6 +658,21 @@ code {
   background-color: var(--status-idle-dot);
 }
 
+/* Status hasil monitoring real-time */
+.statusChip.trouble,
+.statusChip.internet-trouble,
+.statusChip.network-trouble {
+  background-color: var(--status-broken-bg);
+  border: 1px solid var(--status-broken-border);
+  color: var(--status-broken-text);
+}
+.statusChip.trouble .statusDotInner,
+.statusChip.internet-trouble .statusDotInner,
+.statusChip.network-trouble .statusDotInner {
+  background-color: var(--status-broken-dot);
+  box-shadow: 0 0 6px var(--status-broken-dot);
+}
+
 .conditionChip {
   display: inline-block;
   font-size: 10.5px;

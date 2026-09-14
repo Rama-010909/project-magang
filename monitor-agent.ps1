@@ -66,36 +66,64 @@ function Test-InternetHealth($hostName) {
   return @{online=$false; latency=$null; method='InternetHealth'; reason='Koneksi internet gagal atau tidak stabil'}
 }
 function Test-Target($asset) {
-  # Status AKTIF/MATI hanya ditentukan dari target perangkat, tidak pernah dari internet PC monitor.
-  $target = [string]$asset.ipAddress
-  if ([string]::IsNullOrWhiteSpace($target)) { $target = [string]$asset.monitorUrl }
-  if ([string]::IsNullOrWhiteSpace($target)) { return @{online=$false; latency=$null; method='none'; reason='Alamat perangkat kosong'} }
-  $sw = [Diagnostics.Stopwatch]::StartNew()
+  # IP aset bisa berisi beberapa alamat sekaligus, misalnya:
+  # "206.99.80.2/29, 192.168.100.12/24".
+  # Jangan kirim seluruh string sebagai hostname. Ambil dan uji setiap target.
+  $rawTargets = @()
+  if (-not [string]::IsNullOrWhiteSpace([string]$asset.ipAddress)) { $rawTargets += [string]$asset.ipAddress }
+  if (-not [string]::IsNullOrWhiteSpace([string]$asset.monitorUrl)) { $rawTargets += [string]$asset.monitorUrl }
+  if (!$rawTargets.Count) { return @{online=$false; latency=$null; method='none'; reason='Alamat perangkat kosong'} }
 
-  if ($target -match '^https?://') {
-    try {
-      Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 6 | Out-Null
-      $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='Alamat monitoring perangkat merespons'}
-    } catch {
-      $sw.Stop(); return @{online=$false; latency=$null; method='HTTP'; reason='Alamat monitoring perangkat tidak merespons'}
+  $targets = @()
+  foreach ($raw in $rawTargets) {
+    if ($raw -match '^https?://') {
+      $targets += $raw.Trim()
+      continue
+    }
+    # Ambil semua IPv4 dari field, termasuk yang memakai CIDR /24, /29, dll.
+    $ips = [regex]::Matches($raw, '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?(?!\d)') | ForEach-Object { $_.Value }
+    if ($ips.Count) {
+      foreach ($ip in $ips) { $targets += ($ip -replace '/\d{1,2}$','') }
+    } else {
+      # Fallback untuk hostname biasa.
+      $parts = $raw -split '[,;\s]+' | Where-Object { $_ -and $_ -notmatch '^/\d+$' }
+      foreach ($part in $parts) { $targets += ($part -replace '^https?://','' -replace '/.*$','' -replace ':\d+$','') }
     }
   }
+  $targets = @($targets | Where-Object { $_ } | Select-Object -Unique)
+  if (!$targets.Count) { return @{online=$false; latency=$null; method='parse'; reason="Alamat perangkat tidak dapat dibaca: $($rawTargets -join ', ')"} }
 
-  $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':\d+$',''
-  try {
-    $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -TimeoutSeconds 4 -ErrorAction SilentlyContinue
-    if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason='IP perangkat merespons ping'} }
-  } catch {}
+  foreach ($target in $targets) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    if ($target -match '^https?://') {
+      try {
+        Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 6 | Out-Null
+        $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason="Alamat monitoring $target merespons"}
+      } catch {
+        $sw.Stop(); continue
+      }
+    }
 
-  foreach ($port in @(443,80,8291,8728,8729,8080,9100,3389)) {
+    $hostName = $target
     try {
-      $client = New-Object Net.Sockets.TcpClient
-      $task = $client.ConnectAsync($hostName,[int]$port)
-      if ($task.Wait(1800) -and $client.Connected) { $client.Close(); $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method="TCP:$port"; reason="Perangkat merespons pada port $port"} }
-      $client.Close()
+      $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -TimeoutSeconds 4 -ErrorAction SilentlyContinue
+      if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason="IP perangkat $hostName merespons ping"} }
     } catch {}
+
+    foreach ($port in @(443,80,8291,8728,8729,8080,9100,3389)) {
+      try {
+        $client = New-Object Net.Sockets.TcpClient
+        $task = $client.ConnectAsync($hostName,[int]$port)
+        if ($task.Wait(1800) -and $client.Connected) {
+          $client.Close(); $sw.Stop()
+          return @{online=$true; latency=$sw.ElapsedMilliseconds; method="TCP:$port"; reason="Perangkat $hostName merespons pada port $port"}
+        }
+        $client.Close()
+      } catch {}
+    }
+    $sw.Stop()
   }
-  $sw.Stop(); return @{online=$false; latency=$null; method='ICMP/TCP'; reason='Perangkat tidak merespons ping maupun port monitoring'}
+  return @{online=$false; latency=$null; method='ICMP/TCP'; reason="Tidak ada target perangkat yang merespons: $($targets -join ', ')"}
 }
 
 function Get-InternetHealth {
@@ -177,7 +205,7 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
     latency=@{integerValue=[string]($(if($null -eq $device.latency){0}else{$device.latency}))}; checkedAt=@{timestampValue=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')};
     consecutiveFail=@{integerValue=[string]$consecutiveFail}; consecutiveTrouble=@{integerValue=[string]$consecutiveTrouble}; method=@{stringValue=[string]$device.method}; reason=@{stringValue=[string]$ai.reason}; diagnosis=@{stringValue=[string]$ai.diagnosis}; confidence=@{integerValue=[string]$ai.confidence}; nama=@{stringValue=[string]$asset.nama}; kodeAset=@{stringValue=[string]$asset.kodeAset}; lokasi=@{stringValue=[string]$asset.lokasi}; ipAddress=@{stringValue=[string]$asset.ipAddress}
   }
-  try { Invoke-RestMethod -Uri $url -Method Patch -ContentType 'application/json' -Body (@{fields=$fields}|ConvertTo-Json -Depth 8) -TimeoutSec 10 | Out-Null } catch {}
+  try { Invoke-RestMethod -Uri $url -Method Patch -ContentType 'application/json' -Body (@{fields=$fields}|ConvertTo-Json -Depth 8) -TimeoutSec 10 | Out-Null; return $true } catch { Write-Host "[FIRESTORE ERROR] $assetId : $($_.Exception.Message)" -ForegroundColor Red; return $false }
 }
 
 function Send-Ntfy($asset,$title,$message,$priority='high') {
@@ -193,10 +221,10 @@ while ($true) {
   $assets = Get-Assets
   foreach ($asset in $assets) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
+    $old = $States[$asset.id]
     $device = Test-Target $asset
     $internet = Get-InternetHealth
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
-    $old = $States[$asset.id]
     $troubleNow = ($ai.status -ne 'online')
     $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
     $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
