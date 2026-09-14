@@ -1,4 +1,4 @@
-# IT Asset Management - Local LAN Monitor (free, no Vercel env)
+﻿# IT Asset Management - Local LAN Monitor (free, no Vercel env)
 # Run this script on a Windows PC that stays on inside the same LAN.
 $ErrorActionPreference = 'Continue'
 $ProjectId = 'it-asset-diskominfo-batang'
@@ -239,7 +239,8 @@ while ($true) {
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
     $troubleNow = ($ai.status -ne 'online')
     $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
-    Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
+    $writeOk = Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
+    if (-not $writeOk) { Write-Host "[STATUS TIDAK TERKIRIM] $($asset.nama)" -ForegroundColor Red }
 
     $previousStatus = if($old){[string]$old.status}else{''}
     if ($ai.status -ne 'online' -and $previousStatus -eq 'online' -and $consecutiveTrouble -ge $Threshold) {
