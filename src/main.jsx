@@ -37,6 +37,8 @@ const CATEGORIES = [
 ];
 
 const STATUSES = ['Aktif', 'Maintenance', 'Rusak', 'Tidak Digunakan'];
+const REALTIME_STATUSES = ['Trouble', 'Internet Trouble', 'Network Trouble'];
+const ALL_STATUS_FILTERS = [...STATUSES, ...REALTIME_STATUSES];
 const CONDITIONS = ['Baik', 'Cukup', 'Rusak'];
 
 
@@ -844,14 +846,16 @@ function App() {
 
   // Statistik Aset
   const counts = useMemo(() => {
+    const live = assets.map(x => getLiveAssetStatus(x, agentMonitorStates));
     return {
       total: assets.length,
-      aktif: assets.filter(x => x.status === 'Aktif').length,
-      maint: assets.filter(x => x.status === 'Maintenance').length,
-      rusak: assets.filter(x => x.status === 'Rusak').length,
-      idle: assets.filter(x => x.status === 'Tidak Digunakan').length
+      aktif: live.filter(s => s === 'Aktif').length,
+      maint: live.filter(s => s === 'Maintenance').length,
+      rusak: live.filter(s => s === 'Rusak' || s === 'Trouble' || s === 'Network Trouble').length,
+      idle: live.filter(s => s === 'Tidak Digunakan').length,
+      internetTrouble: live.filter(s => s === 'Internet Trouble').length
     };
-  }, [assets]);
+  }, [assets, agentMonitorStates]);
 
   // Filter & Search
   const [monitorStates, setMonitorStates] = useState({});
@@ -895,7 +899,7 @@ function App() {
   const filteredAssets = useMemo(() => {
     return assets
       .filter(item => {
-        const matchesStatus = statusFilter === 'Semua' || item.status === statusFilter;
+        const matchesStatus = statusFilter === 'Semua' || getLiveAssetStatus(item, agentMonitorStates) === statusFilter;
         const matchesCat = catFilter === 'Semua' || item.kategori === catFilter;
         const matchesCond = condFilter === 'Semua' || item.kondisi === condFilter;
         const searchTarget = `${item.kodeAset} ${item.nama} ${item.merk} ${item.model} ${item.lokasi} ${item.ipAddress} ${item.macAddress} ${item.serialNumber} ${item.kategori}`.toLowerCase();
@@ -908,7 +912,7 @@ function App() {
         if (sortBy === 'code') return (a.kodeAset || '').localeCompare(b.kodeAset || '');
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
-  }, [assets, search, statusFilter, catFilter, condFilter, sortBy]);
+  }, [assets, agentMonitorStates, search, statusFilter, catFilter, condFilter, sortBy]);
 
   // Navigasi
   function go(p) {
@@ -1212,6 +1216,7 @@ function App() {
             counts={counts}
             assets={assets}
             maint={maint}
+            monitorStates={agentMonitorStates}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint) })).filter(x => x.trouble).sort((a,b) => b.score-a.score).slice(0,5)}
             setSelected={a => {
               setSelected(a);
@@ -1254,6 +1259,7 @@ function App() {
             form={form}
             setForm={setForm}
             saveAsset={saveAsset}
+            monitorStates={agentMonitorStates}
             loading={loading}
             editing={editing}
             cancel={() => go('inventaris')}
@@ -1294,6 +1300,7 @@ function App() {
         {selected && (
           <DetailModal
             asset={selected}
+            monitorStates={agentMonitorStates}
             maintList={maint.filter(m => m.assetId === selected.id)}
             closeModal={() => {
               setSelected(null);
@@ -1450,20 +1457,35 @@ function NotificationSettingsModal({ enabled, trouble, maintenance, busy, onEnab
 // ==========================================
 // KOMPONEN STATUS CHIP
 // ==========================================
+function getMonitorCheckedAtMs(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.toDate === 'function') {
+    const d = value.toDate();
+    return d instanceof Date ? d.getTime() : 0;
+  }
+  if (typeof value === 'object' && typeof value.seconds === 'number') {
+    return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000);
+  }
+  if (typeof value === 'number') return value < 100000000000 ? value * 1000 : value;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function getLiveAssetStatus(asset, monitorStates) {
   const st = monitorStates?.[asset.id];
   if (!st || typeof st.online !== 'boolean') return asset.status || 'Aktif';
 
-  // Agent berjalan tiap 30 detik. Jika data terlalu lama, jangan menganggap
-  // perangkat mati hanya karena PC monitor/agent sedang offline.
-  const checkedAt = st.checkedAt ? new Date(st.checkedAt).getTime() : 0;
+  // Firestore mengembalikan Timestamp object, bukan selalu string. Gunakan
+  // toMillis()/seconds agar status benar-benar dianggap realtime.
+  const checkedAt = getMonitorCheckedAtMs(st.checkedAt);
   const fresh = checkedAt > 0 && (Date.now() - checkedAt) <= 120000;
   if (!fresh) return asset.status || 'Aktif';
 
-  if (st.online === false || st.status === 'device_trouble') return 'Trouble';
   if (st.status === 'internet_trouble') return 'Internet Trouble';
   if (st.status === 'network_trouble') return 'Network Trouble';
-  if (st.online === true) return 'Aktif';
+  if (st.online === false || st.status === 'device_trouble' || st.status === 'trouble' || st.status === 'offline') return 'Trouble';
+  if (st.online === true || st.status === 'online') return 'Aktif';
   return asset.status || 'Aktif';
 }
 
@@ -1565,7 +1587,7 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
 // ==========================================
 // KOMPONEN DASHBOARD
 // ==========================================
-function DashboardView({ counts, assets, maint, aiAlerts, setSelected, go, openAdd }) {
+function DashboardView({ counts, assets, maint, monitorStates, aiAlerts, setSelected, go, openAdd }) {
   const pct = n => (counts.total ? Math.round((n / counts.total) * 100) : 0);
 
   // Kategori terbanyak
@@ -1789,7 +1811,7 @@ function DashboardView({ counts, assets, maint, aiAlerts, setSelected, go, openA
                     </span>
                   </div>
                 </div>
-                <StatusChip status={a.status} />
+                <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
               </div>
             ))}
 
@@ -1877,7 +1899,7 @@ function InventoryView({
             <span className="filterLabel">Status:</span>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="Semua">Semua Status</option>
-              {STATUSES.map(s => (
+              {ALL_STATUS_FILTERS.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
@@ -2144,7 +2166,7 @@ function InventoryView({
 // ==========================================
 // KOMPONEN FORM INPUT PERANGKAT
 // ==========================================
-function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
+function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, monitorStates }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -2326,15 +2348,20 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
           </label>
 
           <label className="formField">
-            <span className="fieldLabel">Status Operasional</span>
+            <span className="fieldLabel">Status Operasional (Realtime)</span>
             <select
-              value={form.status}
+              value={editing ? getLiveAssetStatus(form, monitorStates) : form.status}
+              disabled={!!editing && !!monitorStates?.[form.id] && getLiveAssetStatus(form, monitorStates) !== (form.status || 'Aktif')}
               onChange={e => setForm({ ...form, status: e.target.value })}
             >
-              {STATUSES.map(s => (
+              {ALL_STATUS_FILTERS.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
+              {!ALL_STATUS_FILTERS.includes(form.status || '') && <option value={form.status}>{form.status}</option>}
             </select>
+            {editing && monitorStates?.[form.id] && (
+              <span className="fieldHelper">Status ini dibaca otomatis dari monitoring LAN. Saat perangkat mati/tidak terjangkau, status berubah menjadi Trouble. Data status inventaris tetap tersimpan sebagai status administrasi.</span>
+            )}
           </label>
 
           {/* FOTO UPLOAD */}
@@ -2403,7 +2430,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel }) {
 // ==========================================
 // MODAL DETAIL ASET
 // ==========================================
-function DetailModal({ asset, maintList, closeModal, onEdit, onDelete, addMaintenanceRecord, onPrintLabel }) {
+function DetailModal({ asset, monitorStates, maintList, closeModal, onEdit, onDelete, addMaintenanceRecord, onPrintLabel }) {
   const [activeTab, setActiveTab] = useState('specs'); // 'specs' | 'maintenance' | 'qr'
   const [showAddMaint, setShowAddMaint] = useState(false);
   const [copiedKey, setCopiedKey] = useState('');
@@ -2448,7 +2475,7 @@ function DetailModal({ asset, maintList, closeModal, onEdit, onDelete, addMainte
             <div className="modalTags">
               <span className="codePill">{asset.kodeAset}</span>
               <span className="catPill">{asset.kategori}</span>
-              <StatusChip status={asset.status} />
+              <StatusChip status={getLiveAssetStatus(asset, monitorStates)} />
               <ConditionChip condition={asset.kondisi} />
             </div>
           </div>
