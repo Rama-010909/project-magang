@@ -38,7 +38,7 @@ const CATEGORIES = [
 
 const STATUSES = ['Aktif', 'Maintenance', 'Rusak', 'Tidak Digunakan'];
 const REALTIME_STATUSES = ['Trouble', 'Internet Trouble', 'Network Trouble'];
-const ALL_STATUS_FILTERS = [...STATUSES, ...REALTIME_STATUSES];
+const ALL_STATUS_FILTERS = ['Aktif', ...REALTIME_STATUSES, 'Menunggu Monitoring'];
 const CONDITIONS = ['Baik', 'Cukup', 'Rusak'];
 
 
@@ -847,7 +847,7 @@ function App() {
 
   // Statistik Aset
   const counts = useMemo(() => {
-    const live = assets.map(x => getLiveAssetStatus(x, agentMonitorStates));
+    const live = assets.map(x => getLiveAssetStatus(x, agentMonitorStates, monitorStates));
     return {
       total: assets.length,
       aktif: live.filter(s => s === 'Aktif').length,
@@ -856,7 +856,7 @@ function App() {
       idle: live.filter(s => s === 'Tidak Digunakan').length,
       internetTrouble: live.filter(s => s === 'Internet Trouble').length
     };
-  }, [assets, agentMonitorStates]);
+  }, [assets, agentMonitorStates, monitorStates]);
 
   // Filter & Search
   const [monitorStates, setMonitorStates] = useState({});
@@ -900,7 +900,7 @@ function App() {
   const filteredAssets = useMemo(() => {
     return assets
       .filter(item => {
-        const matchesStatus = statusFilter === 'Semua' || getLiveAssetStatus(item, agentMonitorStates) === statusFilter;
+        const matchesStatus = statusFilter === 'Semua' || getLiveAssetStatus(item, agentMonitorStates, monitorStates) === statusFilter;
         const matchesCat = catFilter === 'Semua' || item.kategori === catFilter;
         const matchesCond = condFilter === 'Semua' || item.kondisi === condFilter;
         const searchTarget = `${item.kodeAset} ${item.nama} ${item.merk} ${item.model} ${item.lokasi} ${item.ipAddress} ${item.macAddress} ${item.serialNumber} ${item.kategori}`.toLowerCase();
@@ -913,7 +913,7 @@ function App() {
         if (sortBy === 'code') return (a.kodeAset || '').localeCompare(b.kodeAset || '');
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
-  }, [assets, agentMonitorStates, search, statusFilter, catFilter, condFilter, sortBy]);
+  }, [assets, agentMonitorStates, monitorStates, search, statusFilter, catFilter, condFilter, sortBy]);
 
   // Navigasi
   function go(p) {
@@ -1473,16 +1473,16 @@ function getMonitorCheckedAtMs(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function getLiveAssetStatus(asset, monitorStates) {
-  // Mode manual tetap tersedia untuk kebutuhan administrasi aset.
-  // Mode realtime menjadi default agar status kartu/detail mengikuti hasil monitoring.
-  if ((asset?.statusMode || 'realtime') === 'manual') return asset.status || 'Aktif';
-
-  const st = monitorStates?.[asset.id];
+function getLiveAssetStatus(asset, monitorStates, browserMonitorStates = {}) {
+  // STATUS REALTIME SELALU BERDASARKAN HASIL MONITORING.
+  // Jangan pernah menggunakan asset.status/statusMode di sini. Status manual
+  // adalah metadata administratif dan tidak boleh membuat perangkat yang
+  // sebenarnya hidup terlihat 'Tidak Digunakan' atau sebaliknya.
+  const agent = monitorStates?.[asset.id];
+  const browser = browserMonitorStates?.[asset.id];
+  const st = agent || browser;
   if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
 
-  // Firestore mengembalikan Timestamp object, bukan selalu string. Gunakan
-  // toMillis()/seconds agar status benar-benar dianggap realtime.
   const checkedAt = getMonitorCheckedAtMs(st.checkedAt);
   const fresh = checkedAt > 0 && (Date.now() - checkedAt) <= 120000;
   if (!fresh) return 'Menunggu Monitoring';
@@ -1492,6 +1492,10 @@ function getLiveAssetStatus(asset, monitorStates) {
   if (st.online === false || st.status === 'device_trouble' || st.status === 'trouble' || st.status === 'offline') return 'Trouble';
   if (st.online === true || st.status === 'online') return 'Aktif';
   return 'Menunggu Monitoring';
+}
+
+function getAdministrativeStatus(asset) {
+  return asset?.status || 'Aktif';
 }
 
 function StatusChip({ status }) {
@@ -1816,7 +1820,7 @@ function DashboardView({ counts, assets, maint, monitorStates, aiAlerts, setSele
                     </span>
                   </div>
                 </div>
-                <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
+                <StatusChip status={getLiveAssetStatus(a, agentMonitorStates, monitorStates)} />
               </div>
             ))}
 
@@ -1984,7 +1988,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
+                  <StatusChip status={getLiveAssetStatus(a, agentMonitorStates, monitorStates)} />
                 </div>
               </div>
 
@@ -2122,7 +2126,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
+                      <StatusChip status={getLiveAssetStatus(a, agentMonitorStates, monitorStates)} />
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">
@@ -2353,7 +2357,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
           </label>
 
           <div className="formField fullWidth">
-            <span className="fieldLabel">Mode Status Operasional</span>
+            <span className="fieldLabel">Mode Status Tampilan</span>
             <select
               value={form.statusMode || 'realtime'}
               onChange={e => setForm({ ...form, statusMode: e.target.value })}
@@ -2361,11 +2365,11 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
               <option value="realtime">Realtime Monitoring — otomatis</option>
               <option value="manual">Manual — gunakan status pilihan</option>
             </select>
-            <span className="fieldHelper">Pilih Realtime agar sistem menentukan status berdasarkan kondisi perangkat. Pilih Manual jika status operasional ingin ditentukan admin.</span>
+            <span className="fieldHelper">Mode Realtime membuat status tampilan mengikuti monitoring perangkat. Mode Manual hanya mengatur status administratif; status realtime tetap dipantau.</span>
           </div>
 
           <label className="formField">
-            <span className="fieldLabel">Status Operasional</span>
+            <span className="fieldLabel">Status Administratif</span>
             <select
               value={form.status || 'Aktif'}
               disabled={(form.statusMode || 'realtime') !== 'manual'}
@@ -2375,7 +2379,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <span className="fieldHelper">Status manual tersimpan untuk administrasi aset dan hanya digunakan sebagai status tampilan jika mode Manual dipilih.</span>
+            <span className="fieldHelper">Status ini adalah status administratif/manual. Status realtime perangkat ditentukan otomatis oleh monitor dan ditampilkan terpisah.</span>
           </label>
 
           <div className="formField">
@@ -2386,7 +2390,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
                 <span className="fieldHelper" style={{margin:0}}>Pemeriksaan terakhir: {new Date(getMonitorCheckedAtMs(monitorStates[form.id].checkedAt)).toLocaleTimeString('id-ID')}</span>
               )}
             </div>
-            <span className="fieldHelper">Status ini tidak bisa dipilih. Nilainya mengikuti monitor agent secara otomatis.</span>
+            <span className="fieldHelper">Status ini tidak bisa dipilih. Nilainya mengikuti monitor agent secara otomatis, terlepas dari Status Administratif.</span>
           </div>
 
           {/* FOTO UPLOAD */}
@@ -2500,7 +2504,7 @@ function DetailModal({ asset, monitorStates, maintList, closeModal, onEdit, onDe
             <div className="modalTags">
               <span className="codePill">{asset.kodeAset}</span>
               <span className="catPill">{asset.kategori}</span>
-              <StatusChip status={getLiveAssetStatus(asset, monitorStates)} />
+              <StatusChip status={getLiveAssetStatus(asset, agentMonitorStates, monitorStates)} />
               <ConditionChip condition={asset.kondisi} />
             </div>
           </div>
