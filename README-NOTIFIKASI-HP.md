@@ -1,11 +1,10 @@
-# Notifikasi HP
+# Notifikasi HP dan Desktop
 
-1. Deploy website menggunakan HTTPS.
-2. Buka website melalui Chrome Android.
-3. Buka menu notifikasi aplikasi, lalu tekan **Aktifkan Notifikasi**.
-4. Pastikan izin notifikasi situs di Chrome adalah **Izinkan**.
-5. Pastikan dokumen `notificationTokens` muncul di Firestore.
-6. Deploy Cloud Functions:
+1. Deploy website melalui HTTPS.
+2. Buka website di HP/desktop menggunakan Chrome/Edge.
+3. Tekan **Aktifkan Notifikasi** dan pilih **Allow/Izinkan**.
+4. Pastikan dokumen `notificationTokens` muncul di Firestore.
+5. Deploy Cloud Functions:
 
 ```bash
 cd functions
@@ -14,4 +13,6 @@ cd ..
 firebase deploy --only functions
 ```
 
-Aplikasi kini memakai satu service worker Firebase untuk notifikasi latar belakang. Jangan mendaftarkan service worker lain dengan scope `/`, karena dapat mengambil alih service worker FCM.
+6. Pastikan agent monitoring menulis perubahan status ke `monitorStatus`.
+
+Notifikasi dikirim ketika status berubah, misalnya `aman -> trouble` atau `trouble -> aman`. Service worker FCM sudah menangani notifikasi ketika tab/website tidak sedang terbuka.

@@ -669,13 +669,6 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Daftarkan Service Worker agar aplikasi siap menerima notifikasi latar belakang.
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(err => console.warn('PWA service worker:', err));
-    }
-  }, []);
-
   async function handleEnableNotifications() {
     setNotificationBusy(true);
     try {
