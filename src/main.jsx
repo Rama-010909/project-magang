@@ -13,7 +13,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { enableAssetNotifications, updateNotificationPreferences, showAssetNotification } from './notifications';
+import { enableAssetNotifications, autoRegisterNotifications, updateNotificationPreferences, showAssetNotification, listenForegroundNotifications } from './notifications';
 import pemkabLogo from './assets/pemkab-batang.png';
 import pemkabFullLogo from './assets/pemkab-batang-clean.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
@@ -647,6 +647,33 @@ function App() {
   notificationEnabledRef.current = notificationEnabled;
   notificationTroubleRef.current = notificationTrouble;
   notificationMaintenanceRef.current = notificationMaintenance;
+
+  // Pulihkan registrasi FCM otomatis ketika izin browser sudah pernah diberikan.
+  // Jadi setelah aktivasi pertama, perangkat tidak perlu membuka menu notifikasi
+  // lagi untuk menerima notifikasi ketika website sedang tidak dibuka.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await autoRegisterNotifications();
+      if (!cancelled && result?.token) {
+        setNotificationEnabled(true);
+        localStorage.setItem('asset_notification_enabled', 'true');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Dengarkan FCM saat aplikasi sedang terbuka.
+  // Saat background/website ditutup, firebase-messaging-sw.js yang menangani notifikasi.
+  useEffect(() => {
+    let unsubscribe = () => {};
+    (async () => {
+      if (Notification.permission === 'granted') {
+        unsubscribe = await listenForegroundNotifications();
+      }
+    })();
+    return () => unsubscribe();
+  }, []);
 
   // Sinkronisasi Waktu Lokal
   useEffect(() => {

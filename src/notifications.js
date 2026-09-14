@@ -7,6 +7,38 @@ const VAPID_KEY = 'BJUtN9rNIvbZiWVGgmEk-acXNUk0QZ8efxYC-RNMXp18ecH-ovVa8sO7tBSq0
 let activeRegistration = null;
 let activeToken = null;
 
+// Daftarkan token tanpa menampilkan prompt.
+// Ini dipakai saat izin notifikasi sudah pernah diberikan pada perangkat.
+export async function autoRegisterNotifications() {
+  if (!('Notification' in window)) return null;
+  if (Notification.permission !== 'granted') return null;
+  if (!(await isSupported().catch(() => false))) return null;
+
+  try {
+    const registration = await registerNotificationServiceWorker();
+    const messaging = getMessaging(app);
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration
+    });
+    if (!token) return null;
+
+    activeToken = token;
+    await setDoc(doc(db, 'notificationTokens', token), {
+      token,
+      platform: /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
+      userAgent: navigator.userAgent.slice(0, 500),
+      enabled: true,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    return { permission: 'granted', token };
+  } catch (error) {
+    console.warn('Auto-register notifikasi:', error);
+    return null;
+  }
+}
+
 export async function registerNotificationServiceWorker() {
   if (!('serviceWorker' in navigator)) {
     throw new Error('Service Worker tidak didukung browser ini.');

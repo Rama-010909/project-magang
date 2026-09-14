@@ -22,7 +22,7 @@ Notifikasi dikirim ketika status pada `monitorStatus/{assetId}` berubah, misalny
 
 - Deploy ulang website agar `firebase-messaging-sw.js` berada di root domain HTTPS.
 - Deploy ulang Cloud Functions setelah perubahan `functions/index.js`.
-- Pada setiap HP/desktop, buka website sekali, tekan **Aktifkan Notifikasi**, lalu pilih **Izinkan**.
+- Pada setiap HP/desktop, aktivasi awal tetap harus dilakukan sekali: buka website, tekan **Aktifkan Notifikasi**, lalu pilih **Izinkan**. Setelah itu token FCM didaftarkan otomatis setiap kali aplikasi dimuat dan tidak perlu membuka menu notifikasi lagi.
 - Untuk Android, instal PWA dari Chrome setelah izin notifikasi diberikan.
 - Jangan menghapus izin notifikasi, data situs, atau Service Worker setelah token dibuat.
 - Perubahan status yang dikirim adalah perubahan pada `monitorStatus/{assetId}`. Jika status tidak berubah, fungsi tidak mengirim notifikasi baru.
@@ -42,3 +42,11 @@ Notifikasi dikirim ketika status pada `monitorStatus/{assetId}` berubah, misalny
 ## Versi v72
 
 Cloud Function sekarang mengirim payload `notification` + `data`. Saat aplikasi/tab berada di background, Chrome/Edge dan Firebase Service Worker dapat menampilkan notifikasi sistem; saat aplikasi terbuka, `onMessage` menampilkan notifikasi melalui Service Worker. Hindari mendaftarkan Service Worker kedua dengan scope `/`.
+
+
+## Perbaikan v72 — auto-register HP & desktop
+
+- Jika izin browser sudah `granted`, aplikasi otomatis mendaftarkan/menyegarkan token FCM saat halaman dimuat.
+- Tidak perlu masuk ke menu pengaturan notifikasi lagi pada perangkat yang sudah pernah diaktifkan.
+- Saat website/tab tidak dibuka, notifikasi berasal dari `firebase-messaging-sw.js` + Cloud Functions.
+- Aktivasi pertama tetap tidak bisa dibuat diam-diam karena Chrome/Edge/Android mengharuskan pengguna memberikan izin notifikasi.
