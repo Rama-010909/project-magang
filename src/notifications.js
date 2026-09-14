@@ -49,6 +49,9 @@ export async function registerNotificationServiceWorker() {
     updateViaCache: 'none'
   });
   await navigator.serviceWorker.ready;
+  if (activeRegistration.waiting) {
+    activeRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+  }
   try { await activeRegistration.update(); } catch (_) {}
   return activeRegistration;
 }

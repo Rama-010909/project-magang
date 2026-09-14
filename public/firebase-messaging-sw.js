@@ -1,4 +1,6 @@
-/* Firebase Cloud Messaging service worker. Do not register another root SW. */
+/* Firebase Cloud Messaging service worker for IT Asset Management.
+   Must stay at the site root so installed Chrome/Edge PWAs can receive
+   background push notifications even when the app window is closed. */
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 
@@ -16,32 +18,42 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const n = payload.notification || {};
   const d = payload.data || {};
-  const title = d.title || n.title || 'IT Asset Management';
-  const body = d.body || n.body || 'Ada pembaruan status aset.';
-  self.registration.showNotification(title, {
+  const status = String(d.status || '').toLowerCase();
+  const trouble = ['trouble','offline','down','error','gangguan','unreachable'].includes(status);
+  const title = d.title || n.title || (trouble ? 'Peringatan Gangguan Aset' : 'IT Asset Management');
+  const body = d.body || n.body || `${d.assetName || 'Perangkat'}: ${status || 'Ada pembaruan status aset.'}`;
+
+  return self.registration.showNotification(title, {
     body,
     icon: d.icon || n.icon || '/favicon.png',
     badge: d.badge || n.badge || '/favicon.png',
-    tag: d.assetId ? `asset-${d.assetId}` : 'asset-update',
+    tag: d.assetId ? `asset-${d.assetId}-${status || 'update'}` : `asset-update-${Date.now()}`,
     renotify: true,
-    requireInteraction: ['trouble', 'offline', 'down', 'error'].includes(String(d.status || '').toLowerCase()),
-    data: { url: d.url || '/' }
+    requireInteraction: trouble,
+    data: {
+      url: d.url || self.location.origin + '/',
+      assetId: d.assetId || ''
+    }
   });
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || '/';
+  const target = event.notification.data?.url || self.location.origin + '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find(client => 'focus' in client);
+      const existing = clients.find(c => c.url.startsWith(self.location.origin) && 'focus' in c);
       if (existing) {
-        existing.navigate?.(url);
-        return existing.focus();
+        return existing.focus().then(() => {
+          if ('navigate' in existing && existing.url !== target) return existing.navigate(target);
+          return existing;
+        });
       }
-      return self.clients.openWindow(url);
+      return self.clients.openWindow(target);
     })
   );
 });
 
-
+self.addEventListener('message', (event) => { if (event.data?.type === 'SKIP_WAITING') self.skipWaiting(); });
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));

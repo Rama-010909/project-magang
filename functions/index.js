@@ -26,27 +26,16 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
   const body = `${after.nama || after.name || after.assetName || 'Perangkat'}: ${current}`;
   const response = await getMessaging().sendEachForMulticast({
     tokens,
-    notification: { title, body },
     data: {
       assetId: String(event.params.assetId),
       assetName: String(after.nama || after.name || after.assetName || 'Perangkat'),
       status: current,
       title,
       body,
-      url: '/'
+      url: 'https://it-asset-management-diskominfo-batang.vercel.app/'
     },
     webpush: {
-      headers: { Urgency: trouble ? 'high' : 'normal' },
-      fcmOptions: { link: '/' },
-      notification: {
-        title,
-        body,
-        icon: '/favicon.png',
-        badge: '/favicon.png',
-        tag: `asset-${event.params.assetId}`,
-        renotify: true,
-        requireInteraction: trouble
-      }
+      headers: { Urgency: trouble ? 'high' : 'normal' }
     }
   });
 
