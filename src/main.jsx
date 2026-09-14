@@ -1290,7 +1290,7 @@ function App() {
         {page === 'monitor' && (
           <MonitoringView
             assets={assets}
-            monitorStates={{ ...monitorStates, ...agentMonitorStates }}
+            monitorStates={agentMonitorStates}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: getMonitorState(a, agentMonitorStates) })).filter(x => x.trouble || x.monitor?.online === false)}
             go={go}
           />
@@ -1495,7 +1495,9 @@ function getMonitorCheckedAtMs(value) {
 }
 
 function getMonitorState(asset, states = {}) {
-  return states?.[asset?.id] || states?.[asset?.kodeAset] || null;
+  // Prioritaskan dokumen monitorStatus dengan ID = kodeAset.
+  // Ini mencegah dokumen lama ber-ID acak mengambil alih status realtime.
+  return states?.[asset?.kodeAset] || states?.[asset?.id] || null;
 }
 
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
@@ -1734,10 +1736,10 @@ function DashboardView({ counts, realtimeCounts, assets, maint, monitorStates, b
             <span className="statLabel">Perangkat Aktif</span>
             <div className="statIconBox"><Icons.Check /></div>
           </div>
-          <div className="statValue">{counts.aktif}</div>
+          <div className="statValue">{realtimeCounts.online}</div>
           <div className="statFooter">
-            <span className="statBadgePositive">{pct(counts.aktif)}% Beroperasi</span>
-            <span className="statSub">kondisi normal</span>
+            <span className="statBadgePositive">{pct(realtimeCounts.online)}% Online</span>
+            <span className="statSub">berdasarkan monitoring realtime</span>
           </div>
         </div>
 

@@ -50,6 +50,7 @@ $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 $Topic = [string]$config.topic
 $Interval = [int]$config.intervalSeconds
 $Threshold = 1 # Satu kali gagal = Offline; tidak ada grace period.
+if ($Interval -lt 10) { $Interval = 30 }
 $States = @{}
 $LastAssetRefresh = Get-Date '2000-01-01'
 
@@ -247,7 +248,7 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
   $checkedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
   $fields=@{
     online=@{booleanValue=[bool]$device.online}; status=@{stringValue=[string]$ai.status}; state=@{stringValue=[string]$ai.status};
-    deviceStatus=@{stringValue=[string]$ai.deviceStatus}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
+    deviceStatus=@{stringValue=($(if([bool]$device.online){'aktif'}else{'mati/tidak terjangkau'}))}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
     latency=@{integerValue=[string]$latencyValue}; checkedAt=@{timestampValue=$checkedAt};
     consecutiveFail=@{integerValue=[string]$consecutiveFail}; consecutiveTrouble=@{integerValue=[string]$consecutiveTrouble};
     method=@{stringValue=[string]$device.method}; reason=@{stringValue=[string]$device.reason}; diagnosis=@{stringValue=[string]$ai.diagnosis}; confidence=@{integerValue=[string]$ai.confidence};
@@ -255,7 +256,7 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
   }
   try {
     $body = (@{fields=$fields}|ConvertTo-Json -Depth 8)
-    Write-Host "[MONITOR WRITE] assetId='$assetId' -> monitorStatus/$encodedId | online=$($device.online)" -ForegroundColor DarkGray
+    Write-Host "[MONITOR WRITE] kodeAset='$assetId' -> monitorStatus/$encodedId | online=$($device.online) | deviceStatus=$(if([bool]$device.online){'aktif'}else{'mati/tidak terjangkau'})" -ForegroundColor DarkGray
     Invoke-FirestoreRest -Uri $url -Method Patch -Body $body | Out-Null
     return $true
   } catch { Write-Host "[FIRESTORE ERROR] monitorStatus/$assetId : $($_.Exception.Message)" -ForegroundColor Red; return $false }
@@ -279,7 +280,8 @@ while ($true) {
   if ($assets.Count -eq 0) { Write-Host "Tidak ada aset yang terbaca dari Firestore. Jika muncul PERMISSION_DENIED, periksa Firestore Rules agar agent boleh membaca assets dan menulis monitorStatus." -ForegroundColor Yellow }
   foreach ($asset in $assets) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
-    $monitorId = [string]$asset.monitorId
+    $monitorId = [string]$asset.kodeAset
+    if ([string]::IsNullOrWhiteSpace($monitorId)) { $monitorId = [string]$asset.id }
     $old = $States[$monitorId]
     $device = Test-Target $asset
     # Tidak ada grace period: hasil probe agent langsung menjadi Online/Offline.
