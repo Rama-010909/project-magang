@@ -1,0 +1,10 @@
+{
+  "routerIp": "192.168.88.1",
+  "routerApiPort": 443,
+  "routerApiHttps": true,
+  "routerUsername": "monitor",
+  "routerPassword": "GANTI_PASSWORD",
+  "discoverFrom": ["dhcp", "arp"],
+  "intervalSeconds": 60,
+  "autoCreateAssets": true
+}

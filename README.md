@@ -6,3 +6,6 @@
 4. Hasil pemeriksaan disimpan ke koleksi `monitorStatus` dan dashboard menampilkan status Aman/Online atau Gangguan/Trouble.
 
 Catatan penting: agent harus berada pada jaringan yang dapat menjangkau IP target. IP publik yang berada di balik NAT/firewall harus menyediakan akses monitoring yang sesuai. Jika tidak dapat dijangkau, status ditampilkan sebagai gangguan/tidak merespons, bukan dianggap aman.
+
+## Auto monitoring
+Lihat `README-AUTO-MONITORING.md` dan `auto-discovery-config.example.json` untuk konfigurasi deteksi perangkat otomatis dari MikroTik.
