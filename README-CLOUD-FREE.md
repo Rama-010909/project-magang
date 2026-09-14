@@ -1,42 +1,26 @@
-# Cloud Monitoring GRATIS
+# Cloud Monitor Gratis + Push Notification
 
-Paket ini tidak memakai Firebase Admin SDK, Service Account, Cloud Functions, atau Firebase Blaze. Firebase tetap bisa berada di Spark.
+Alur utama:
+GitHub Actions (5 menit) -> cek aset -> Firestore monitorStatus -> deteksi perubahan -> FCM -> browser/PWA.
 
-## Cara kerja
-- Vercel: hanya hosting web + API manual.
-- GitHub Actions: menjalankan cloud monitor otomatis setiap 5 menit. GitHub menyatakan interval schedule minimum adalah 5 menit.
-- Firebase Auth Anonymous: memberi ID token sementara ke monitor.
-- Firestore: membaca `assets` dan menulis `monitorStatus`.
+Monitoring tetap berjalan tanpa service account. Push background membutuhkan kredensial Firebase Cloud Messaging yang disimpan aman sebagai GitHub Actions Secret:
 
-## 1. Firebase Authentication
-Firebase Console → Authentication → Sign-in method → aktifkan **Anonymous**.
+`FIREBASE_SERVICE_ACCOUNT_JSON`
 
-## 2. Firestore Rules
-Monitor membutuhkan akses authenticated untuk membaca `assets` dan menulis `monitorStatus`. Tambahkan/ sesuaikan aturan di rules project kamu; jangan mengganti aturan collection lain secara sembarangan. Contoh bagian minimal:
+Jangan menaruh JSON service account di source code atau mengunggahnya ke GitHub.
 
-```text
-match /assets/{id} {
-  allow read: if request.auth != null;
-}
-match /monitorStatus/{id} {
-  allow read, write: if request.auth != null;
-}
-```
+## Setup satu kali
+1. Di Firebase/Google Cloud, buat Service Account untuk project `it-asset-diskominfo-batang`.
+2. Buat key JSON untuk service account tersebut.
+3. Di GitHub repository -> Settings -> Secrets and variables -> Actions -> New repository secret.
+4. Name: `FIREBASE_SERVICE_ACCOUNT_JSON`
+5. Value: isi seluruh JSON key.
+6. Jalankan workflow `Cloud Monitor` secara manual sekali untuk pengujian.
 
-Jika aplikasi web kamu sekarang memakai aturan public untuk membaca data, aturan existing boleh tetap dipakai selama monitor anonymous mendapat izin yang diperlukan.
+Setelah token FCM browser/HP tersimpan di koleksi `notificationTokens`, perubahan `Online -> Offline` dan `Offline -> Online` akan dikirim ke token-token tersebut.
 
-## 3. GitHub
-Upload seluruh isi project ke repository. Folder `.github/workflows/cloud-monitor.yml` akan menjalankan monitor tiap 5 menit. Kamu juga bisa menjalankan manual dari tab Actions → Cloud Monitor (Free) → Run workflow.
-
-GitHub Actions standard runner gratis untuk repository public. Repository private memakai kuota GitHub Free.
-
-## 4. Vercel
-Tidak perlu `FIREBASE_SERVICE_ACCOUNT_JSON`. Tidak perlu Firebase Blaze. Tidak perlu memasang Cloud Functions. Deploy project seperti biasa.
-
-`/api/monitor` masih tersedia untuk pengecekan manual jika `CRON_SECRET` diisi di Vercel Environment, tetapi monitoring otomatis utama berasal dari GitHub Actions.
-
-## Catatan penting
-- GitHub scheduled workflow tidak menjamin tepat pada detik/menit tertentu; jadwal dapat mengalami delay.
-- Target `publicIp`/`monitorUrl` harus benar-benar dapat dijangkau dari internet.
-- Public IP saja tidak menjamin perangkat dapat diprobe jika firewall/NAT menutup port.
-- Jangan membuka Winbox/SSH/RDP ke internet hanya untuk monitoring. Gunakan endpoint/port monitoring khusus.
+Catatan:
+- GitHub Actions scheduled workflow minimal 5 menit dan dapat terlambat beberapa menit.
+- Vercel hanya menjadi hosting web/API; bukan scheduler per menit pada paket Hobby.
+- Android native pada paket ini tetap punya monitor lokal dan notifikasi lokal saat service mendeteksi perubahan. Push FCM native memerlukan Android app Firebase yang terdaftar jika ingin dijadikan channel push terpisah.
+- Windows LAN agent sekarang juga menampilkan notifikasi Windows lokal saat transisi Offline/Online, selain ntfy bila Topic diatur.

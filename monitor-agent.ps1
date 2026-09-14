@@ -297,6 +297,22 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
     return $true
   } catch { Write-Host "[FIRESTORE ERROR] monitorStatus/$assetId : $($_.Exception.Message)" -ForegroundColor Red; return $false }
 }
+function Send-WindowsNotification($title, $message, $isWarning=$true) {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $icon = New-Object System.Windows.Forms.NotifyIcon
+    $icon.Icon = [System.Drawing.SystemIcons]::Application
+    $icon.Visible = $true
+    $icon.BalloonTipTitle = $title
+    $icon.BalloonTipText = $message
+    $icon.BalloonTipIcon = $(if($isWarning){'Warning'}else{'Info'})
+    $icon.ShowBalloonTip(8000)
+    Start-Sleep -Milliseconds 9000
+    $icon.Dispose()
+  } catch {}
+}
+
 function Send-Ntfy($asset,$title,$message,$priority='high') {
   if ([string]::IsNullOrWhiteSpace($Topic)) { return }
   try {
@@ -354,10 +370,14 @@ while ($true) {
     $previousOnline = $null
     if ($old -and $old.ContainsKey('online')) { $previousOnline = [bool]$old.online }
     if ($device.online -eq $false -and $previousOnline -eq $true -and $consecutiveFail -ge $Threshold) {
-      Send-Ntfy $asset 'Peringatan Perangkat Offline' "$($asset.nama) ($($asset.kodeAset)) tidak dapat dijangkau. $($device.reason)"
+      $msg = "$($asset.nama) ($($asset.kodeAset)) tidak dapat dijangkau. $($device.reason)"
+      Send-WindowsNotification 'Peringatan Perangkat Offline' $msg $true
+      Send-Ntfy $asset 'Peringatan Perangkat Offline' $msg
     }
     if ($device.online -eq $true -and $previousOnline -eq $false -and $old -and $config.notifyRecovery) {
-      Send-Ntfy $asset 'Perangkat Kembali Online' "$($asset.nama) ($($asset.kodeAset)) kembali online. $($device.reason)" 'default'
+      $msg = "$($asset.nama) ($($asset.kodeAset)) kembali online. $($device.reason)"
+      Send-WindowsNotification 'Perangkat Kembali Online' $msg $false
+      Send-Ntfy $asset 'Perangkat Kembali Online' $msg 'default'
     }
     $States[$monitorId] = @{consecutiveFail=$consecutiveFail; consecutiveTrouble=$consecutiveTrouble; online=[bool]$device.online; status=$ai.status}
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $($asset.nama) -> $($ai.status.ToUpper()) | Perangkat: $($ai.deviceStatus) | Internet: $($ai.internetStatus) | $($ai.diagnosis)"

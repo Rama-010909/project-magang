@@ -1,52 +1,38 @@
-# Notifikasi HP dan Desktop
+# Notifikasi Background HP + Desktop
 
+## Alur sekarang
+GitHub Actions -> Cloud Monitor -> Firestore `monitorStatus` -> deteksi perubahan status -> Firebase Cloud Messaging (FCM) -> Chrome/Edge/PWA.
+
+### Aktivasi browser
 1. Deploy website melalui HTTPS.
-2. Buka website di HP dan desktop.
-3. Tekan tombol **Aktifkan Notifikasi** dan pilih **Izinkan**.
-4. Pastikan dokumen muncul di Firestore pada koleksi `notificationTokens`.
-5. Deploy Cloud Functions:
+2. Buka website sekali di HP/desktop.
+3. Izinkan notifikasi saat diminta.
+4. Pastikan token muncul di Firestore `notificationTokens`.
+5. Setelah token tersimpan, browser dapat menerima push saat website tidak sedang dibuka, selama browser/OS mengizinkan notifikasi background.
 
-```bash
-firebase login
-firebase use PROJECT_ID_KAMU
-cd functions
-npm install
-cd ..
-firebase deploy --only functions
-```
+### Kredensial push server
+GitHub Actions membutuhkan repository secret bernama:
 
-Notifikasi dikirim ketika status pada `monitorStatus/{assetId}` berubah, misalnya `online` menjadi `trouble` atau `trouble` menjadi `online`.
+`FIREBASE_SERVICE_ACCOUNT_JSON`
 
+Isinya seluruh JSON key service account Firebase/Google Cloud. Jangan commit JSON tersebut ke repository.
 
-## Penting setelah update
+GitHub -> Settings -> Secrets and variables -> Actions -> New repository secret.
 
-- Deploy ulang website agar `firebase-messaging-sw.js` berada di root domain HTTPS.
-- Deploy ulang Cloud Functions setelah perubahan `functions/index.js`.
-- Pada setiap HP/desktop, aktivasi awal tetap harus dilakukan sekali: buka website, tekan **Aktifkan Notifikasi**, lalu pilih **Izinkan**. Setelah itu token FCM didaftarkan otomatis setiap kali aplikasi dimuat dan tidak perlu membuka menu notifikasi lagi.
-- Untuk Android, instal PWA dari Chrome setelah izin notifikasi diberikan.
-- Jangan menghapus izin notifikasi, data situs, atau Service Worker setelah token dibuat.
-- Perubahan status yang dikirim adalah perubahan pada `monitorStatus/{assetId}`. Jika status tidak berubah, fungsi tidak mengirim notifikasi baru.
+Workflow akan tetap menjalankan monitoring jika secret belum ada, tetapi log akan menyebut bahwa push FCM dilewati.
 
+### Jenis notifikasi
+- `Online -> Offline`: Peringatan Perangkat Offline.
+- `Offline -> Online`: Perangkat Kembali Online.
+- Tidak ada perubahan status: tidak mengirim notifikasi baru.
 
-## Checklist HP dan desktop
+### Android native
+Android monitor tetap mempunyai monitoring lokal. Saat service mendeteksi perubahan Online/Offline, aplikasi menampilkan notifikasi lokal. Untuk push FCM native terpisah, Android app harus didaftarkan sebagai app Android di Firebase dan dikonfigurasi dengan kredensial Android Firebase.
 
-1. Deploy ulang website dan Functions.
-2. Hapus Service Worker lama melalui DevTools > Application > Service Workers jika versi lama masih tersimpan.
-3. Buka website sekali pada setiap perangkat, lalu tekan Aktifkan Notifikasi.
-4. Izinkan notifikasi untuk website dan untuk Chrome/Edge di pengaturan Windows/Android.
-5. Jangan gunakan mode Incognito untuk pengujian.
-6. Di desktop, aktifkan opsi background apps Chrome/Edge jika browser menyediakan opsi tersebut.
-7. Uji dengan tab ditutup terlebih dahulu. Menutup seluruh browser dapat bergantung pada pengaturan browser/OS.
+### Windows
+LAN monitor PowerShell juga menampilkan notifikasi Windows lokal ketika mendeteksi transisi Online/Offline. ntfy tetap tersedia jika `Topic` di konfigurasi diisi.
 
-
-## Versi v72
-
-Cloud Function sekarang mengirim payload `notification` + `data`. Saat aplikasi/tab berada di background, Chrome/Edge dan Firebase Service Worker dapat menampilkan notifikasi sistem; saat aplikasi terbuka, `onMessage` menampilkan notifikasi melalui Service Worker. Hindari mendaftarkan Service Worker kedua dengan scope `/`.
-
-
-## Perbaikan v72 — auto-register HP & desktop
-
-- Jika izin browser sudah `granted`, aplikasi otomatis mendaftarkan/menyegarkan token FCM saat halaman dimuat.
-- Tidak perlu masuk ke menu pengaturan notifikasi lagi pada perangkat yang sudah pernah diaktifkan.
-- Saat website/tab tidak dibuka, notifikasi berasal dari `firebase-messaging-sw.js` + Cloud Functions.
-- Aktivasi pertama tetap tidak bisa dibuat diam-diam karena Chrome/Edge/Android mengharuskan pengguna memberikan izin notifikasi.
+## Catatan
+- Scheduled GitHub Actions berjalan dengan interval minimum 5 menit dan jadwal dapat sedikit terlambat.
+- Vercel Hobby tidak digunakan sebagai scheduler per menit.
+- Jangan membuka port administrasi seperti Winbox/SSH/RDP ke internet hanya untuk monitoring. Gunakan `monitorUrl` atau port monitoring khusus.
