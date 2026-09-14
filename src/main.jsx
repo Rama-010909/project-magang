@@ -878,39 +878,12 @@ function App() {
     monitorStatesRef.current = monitorStates;
   }, [monitorStates]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      const next = { ...monitorStatesRef.current };
-      for (const asset of assets) {
-        let url = String(asset.monitorUrl || '').trim();
-        if (!url && asset.ipAddress) {
-          const firstIp = String(asset.ipAddress).match(/\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/);
-          if (firstIp) url = `http://${firstIp[0]}`;
-        }
-        if (!url) continue;
-        const started = Date.now();
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4500);
-        try {
-          await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
-          next[asset.id] = { online: true, latency: Date.now() - started, checkedAt: Date.now(), consecutiveFail: 0 };
-        } catch (e) {
-          const prev = next[asset.id] || {};
-          next[asset.id] = { online: false, latency: null, checkedAt: Date.now(), consecutiveFail: (prev.consecutiveFail || 0) + 1 };
-          if ((prev.consecutiveFail || 0) < 2 && notificationEnabledRef.current && notificationTroubleRef.current) {
-            showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline / indikasi trouble', aiScore: 90, aiReason: 'Perangkat tidak merespons pemeriksaan koneksi' } });
-          }
-        } finally { clearTimeout(timer); }
-      }
-      if (!cancelled) { setMonitorStates(next); monitorStatesRef.current = next; }
-    };
-    if (assets.length) check();
-    const id = setInterval(check, 30000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [assets.length]);
+  // FIX8: browser-side ping dimatikan.
+  // Agent LAN adalah satu-satunya sumber status perangkat agar hasil tidak konflik
+  // (browser HTTPS -> IP LAN dapat gagal karena mixed-content/CORS lalu memicu
+  // notifikasi OFFLINE palsu walaupun perangkat sebenarnya ONLINE).
 
-  const monitorAlertsCount = assets.filter(a => monitorStates[a.id] && monitorStates[a.id].online === false && monitorStates[a.id].consecutiveFail >= 2).length;
+  const monitorAlertsCount = assets.filter(a => agentMonitorStates[a.id]?.online === false).length;
 
   const filteredAssets = useMemo(() => {
     return assets
@@ -1234,7 +1207,7 @@ function App() {
             assets={assets}
             maint={maint}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={monitorStates}
+            browserMonitorStates={{}}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint) })).filter(x => x.trouble).sort((a,b) => b.score-a.score).slice(0,5)}
             setSelected={a => {
               setSelected(a);
@@ -1262,7 +1235,7 @@ function App() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={monitorStates}
+            browserMonitorStates={{}}
             openEdit={openEdit}
             removeAsset={removeAsset}
             onOpenDetail={a => {
@@ -1279,7 +1252,7 @@ function App() {
             setForm={setForm}
             saveAsset={saveAsset}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={monitorStates}
+            browserMonitorStates={{}}
             loading={loading}
             editing={editing}
             cancel={() => go('inventaris')}
@@ -1289,7 +1262,7 @@ function App() {
         {page === 'monitor' && (
           <MonitoringView
             assets={assets}
-            monitorStates={{ ...monitorStates, ...agentMonitorStates }}
+            monitorStates={agentMonitorStates}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: agentMonitorStates[a.id] || monitorStates[a.id] })).filter(x => x.trouble || x.monitor?.online === false)}
             go={go}
           />
@@ -1321,7 +1294,7 @@ function App() {
           <DetailModal
             asset={selected}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={monitorStates}
+            browserMonitorStates={{}}
             maintList={maint.filter(m => m.assetId === selected.id)}
             closeModal={() => {
               setSelected(null);
@@ -1866,7 +1839,7 @@ function DashboardView({ counts, realtimeCounts, assets, maint, monitorStates, b
                     </span>
                   </div>
                 </div>
-                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
+                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, agentMonitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, agentMonitorStates, {})} /></div>
               </div>
             ))}
 
@@ -2035,7 +2008,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
+                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, agentMonitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, agentMonitorStates, {})} /></div>
                 </div>
               </div>
 
@@ -2173,7 +2146,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
+                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, agentMonitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, agentMonitorStates, {})} /></div>
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">

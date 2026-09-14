@@ -42,14 +42,14 @@ if (Test-Path $EmbeddedAI) { . $EmbeddedAI }
 
 if (!(Test-Path $ConfigPath) -or [string]::IsNullOrWhiteSpace(([string]((Get-Content $ConfigPath -Raw | ConvertFrom-Json).topic))) ) {
   $topic = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 28 | ForEach-Object {[char]$_})
-  @{ topic=$topic; intervalSeconds=30; failThreshold=2; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+  @{ topic=$topic; intervalSeconds=30; failThreshold=1; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
   Write-Host "Config dibuat. TOPIC NOTIFIKASI: $topic" -ForegroundColor Green
   Write-Host "Simpan topic ini dan subscribe di aplikasi ntfy." -ForegroundColor Yellow
 }
 $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 $Topic = [string]$config.topic
 $Interval = [int]$config.intervalSeconds
-$Threshold = [int]$config.failThreshold
+$Threshold = 1  # FIX8: satu hasil gagal = OFFLINE, supaya tidak tertahan ONLINE 30-60 detik
 $States = @{}
 $LastAssetRefresh = Get-Date '2000-01-01'
 
@@ -285,9 +285,7 @@ while ($true) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $old = $States[$asset.id]
     $device = Test-Target $asset
-    # Hindari status Offline palsu karena satu kali timeout. Perangkat baru dianggap Offline
-    # setelah gagal sebanyak $Threshold kali berturut-turut. Jika sebelumnya Online,
-    # satu kegagalan sementara tetap ditampilkan Online.
+    # FIX8: tidak ada grace period. Satu hasil gagal dari agent langsung menjadi OFFLINE.
     $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
     if (-not $device.online -and $old -and $old.online -eq $true -and $consecutiveFail -lt $Threshold) {
       $device.online = $true
@@ -307,11 +305,10 @@ while ($true) {
       -asset $asset
     if (-not $writeOk) { Write-Host "[STATUS TIDAK TERKIRIM] $($asset.nama)" -ForegroundColor Red }
 
-    $previousStatus = if($old){[string]$old.status}else{''}
-    if ($ai.status -ne 'online' -and $previousStatus -eq 'online' -and $consecutiveTrouble -ge $Threshold) {
+    if (-not $device.online -and $old -and $old.online -eq $true) {
       Send-Ntfy $asset 'Peringatan Gangguan Aset' "$($asset.nama) ($($asset.kodeAset)): $($ai.diagnosis) Keterangan: $($ai.reason)"
     }
-    if ($ai.status -eq 'online' -and $previousStatus -ne 'online' -and $old -and $config.notifyRecovery) {
+    if ($device.online -and $old -and $old.online -eq $false -and $config.notifyRecovery) {
       Send-Ntfy $asset 'Aset Kembali Aman' "$($asset.nama) ($($asset.kodeAset)) kembali aman. $($ai.diagnosis)" 'default'
     }
     $States[$asset.id] = @{consecutiveFail=$consecutiveFail; consecutiveTrouble=$consecutiveTrouble; online=$device.online; status=$ai.status}

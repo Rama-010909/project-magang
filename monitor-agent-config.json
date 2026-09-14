@@ -11,6 +11,6 @@
               ],
     "notifyRecovery":  true,
     "intervalSeconds":  30,
-    "failThreshold":  2,
-    "topic":  "aXC4dlU8BmAoQLjPk5YE0gT37qc1"
+    "failThreshold":  1,
+    "topic":  "nBkZVTF8umohLEIdNOUH9RXArij2"
 }
