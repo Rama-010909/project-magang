@@ -52,6 +52,9 @@ $Interval = [int]$config.intervalSeconds
 $Threshold = 1 # Satu kali gagal = Offline; tidak ada grace period.
 if ($Interval -lt 10) { $Interval = 30 }
 $States = @{}
+$AssetCache = @()
+$MonitorDocMap = @{}
+$LastMonitorDocRefresh = Get-Date '2000-01-01'
 $LastAssetRefresh = Get-Date '2000-01-01'
 
 function Get-FieldValue($field) {
@@ -64,14 +67,44 @@ function Get-FieldValue($field) {
 function Get-Assets {
   try {
     $r = Invoke-FirestoreRest -Uri "$ApiBase/assets?pageSize=1000" -Method Get
-    @($r.documents | ForEach-Object {
+    $rows = @($r.documents | ForEach-Object {
       $f = $_.fields
       $docId = ($_.name -split '/')[-1]
       $kode = [string](Get-FieldValue $f.kodeAset)
       if ([string]::IsNullOrWhiteSpace($kode)) { $kode = $docId }
       [pscustomobject]@{ id=$docId; monitorId=$kode; nama=(Get-FieldValue $f.nama); kodeAset=$kode; ipAddress=(Get-FieldValue $f.ipAddress); monitorUrl=(Get-FieldValue $f.monitorUrl); lokasi=(Get-FieldValue $f.lokasi) }
     })
-  } catch { Write-Host "[FIRESTORE READ ERROR] $($_.Exception.Message)" -ForegroundColor Red; return @() }
+    $script:AssetCache = @($rows)
+    $script:LastAssetRefresh = Get-Date
+    return $script:AssetCache
+  } catch {
+    Write-Host "[FIRESTORE READ ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    if ($script:AssetCache.Count -gt 0) {
+      Write-Host "[ASSET CACHE] Memakai $($script:AssetCache.Count) aset terakhir agar aset offline tidak hilang dari daftar monitoring." -ForegroundColor Yellow
+      return $script:AssetCache
+    }
+    return @()
+  }
+}
+
+function Refresh-MonitorDocMap {
+  try {
+    $r = Invoke-FirestoreRest -Uri "$ApiBase/monitorStatus?pageSize=1000" -Method Get
+    $map = @{}
+    foreach ($doc in @($r.documents)) {
+      $id = ($doc.name -split '/')[-1]
+      $f = $doc.fields
+      $code = [string](Get-FieldValue $f.kodeAset)
+      if ([string]::IsNullOrWhiteSpace($code)) { $code = [string](Get-FieldValue $f.assetId) }
+      if (-not [string]::IsNullOrWhiteSpace($code)) {
+        $map[$code] = $id
+      }
+    }
+    $script:MonitorDocMap = $map
+    $script:LastMonitorDocRefresh = Get-Date
+  } catch {
+    Write-Host "[MONITOR MAP] Tidak bisa membaca dokumen monitor lama: $($_.Exception.Message)" -ForegroundColor DarkYellow
+  }
 }
 function Test-InternetHealth($hostName) {
   # Pemeriksaan koneksi internet secara nyata, bukan hanya ping IP WAN.
@@ -241,7 +274,10 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
   # Pakai kodeAset sebagai document ID. Jangan gunakan updateMask query agar tidak
   # terjadi document ID/query yang kacau pada Firestore REST. PATCH tanpa mask tetap
   # meng-update field yang dikirim.
-  $encodedId = [System.Uri]::EscapeDataString([string]$assetId)
+  if ((Get-Date) - $script:LastMonitorDocRefresh -gt [TimeSpan]::FromSeconds(60)) { Refresh-MonitorDocMap }
+  $targetDocId = [string]$script:MonitorDocMap[[string]$assetId]
+  if ([string]::IsNullOrWhiteSpace($targetDocId)) { $targetDocId = [string]$assetId }
+  $encodedId = [System.Uri]::EscapeDataString($targetDocId)
   $url = "$ApiBase/monitorStatus/$encodedId"
   $latencyValue = 0
   if ($null -ne $device.latency) { $latencyValue = [int64]$device.latency }
@@ -256,7 +292,7 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
   }
   try {
     $body = (@{fields=$fields}|ConvertTo-Json -Depth 8)
-    Write-Host "[MONITOR WRITE] kodeAset='$assetId' -> monitorStatus/$encodedId | online=$($device.online) | deviceStatus=$(if([bool]$device.online){'aktif'}else{'mati/tidak terjangkau'})" -ForegroundColor DarkGray
+    Write-Host "[MONITOR WRITE] kodeAset='$assetId' -> monitorStatus/$targetDocId | online=$($device.online) | deviceStatus=$(if([bool]$device.online){'aktif'}else{'mati/tidak terjangkau'})" -ForegroundColor DarkGray
     Invoke-FirestoreRest -Uri $url -Method Patch -Body $body | Out-Null
     return $true
   } catch { Write-Host "[FIRESTORE ERROR] monitorStatus/$assetId : $($_.Exception.Message)" -ForegroundColor Red; return $false }

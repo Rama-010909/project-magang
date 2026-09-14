@@ -626,12 +626,26 @@ function App() {
     if (!login) return;
     const unsub = onSnapshot(collection(db, 'monitorStatus'), snapshot => {
       const rows = {};
+      const latestByAsset = {};
+      const toMs = value => {
+        if (!value) return 0;
+        if (typeof value?.toMillis === 'function') return value.toMillis();
+        if (typeof value === 'object' && typeof value.seconds === 'number') return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000);
+        if (typeof value === 'number') return value < 100000000000 ? value * 1000 : value;
+        const n = Date.parse(String(value));
+        return Number.isFinite(n) ? n : 0;
+      };
       snapshot.docs.forEach(d => {
         const data = d.data() || {};
         const row = { id: d.id, ...data, source: 'agent' };
         rows[d.id] = row;
-        if (data.kodeAset) rows[String(data.kodeAset)] = row;
+        const keys = [data.kodeAset, data.assetId].filter(Boolean).map(String);
+        keys.forEach(key => {
+          const old = latestByAsset[key];
+          if (!old || toMs(row.checkedAt) >= toMs(old.checkedAt)) latestByAsset[key] = row;
+        });
       });
+      Object.keys(latestByAsset).forEach(key => { rows[key] = latestByAsset[key]; });
       setAgentMonitorStates(rows);
       setMonitorStates(rows);
       monitorStatesRef.current = rows;
