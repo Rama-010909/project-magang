@@ -1,18 +1,18 @@
 # Notifikasi HP dan Desktop
 
 1. Deploy website melalui HTTPS.
-2. Buka website di HP/desktop menggunakan Chrome/Edge.
-3. Tekan **Aktifkan Notifikasi** dan pilih **Allow/Izinkan**.
-4. Pastikan dokumen `notificationTokens` muncul di Firestore.
+2. Buka website di HP dan desktop.
+3. Tekan tombol **Aktifkan Notifikasi** dan pilih **Izinkan**.
+4. Pastikan dokumen muncul di Firestore pada koleksi `notificationTokens`.
 5. Deploy Cloud Functions:
 
 ```bash
+firebase login
+firebase use PROJECT_ID_KAMU
 cd functions
 npm install
 cd ..
 firebase deploy --only functions
 ```
 
-6. Pastikan agent monitoring menulis perubahan status ke `monitorStatus`.
-
-Notifikasi dikirim ketika status berubah, misalnya `aman -> trouble` atau `trouble -> aman`. Service worker FCM sudah menangani notifikasi ketika tab/website tidak sedang terbuka.
+Notifikasi dikirim ketika status pada `monitorStatus/{assetId}` berubah, misalnya `online` menjadi `trouble` atau `trouble` menjadi `online`.
