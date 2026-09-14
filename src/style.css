@@ -673,6 +673,18 @@ code {
   box-shadow: 0 0 6px var(--status-broken-dot);
 }
 
+.statusChip.online { background-color: var(--status-active-bg); border: 1px solid var(--status-active-border); color: var(--status-active-text); }
+.statusChip.online .statusDotInner { background-color: var(--status-active-dot); box-shadow: 0 0 6px var(--status-active-dot); }
+.statusChip.offline { background-color: var(--status-broken-bg); border: 1px solid var(--status-broken-border); color: var(--status-broken-text); }
+.statusChip.offline .statusDotInner { background-color: var(--status-broken-dot); box-shadow: 0 0 6px var(--status-broken-dot); }
+.statusChip.menunggu-monitoring { background: var(--surface-2, #f8fafc); border: 1px solid var(--border-color, #d1d5db); color: var(--text-secondary, #64748b); }
+.statusChip.menunggu-monitoring .statusDotInner { background: #94a3b8; }
+.statusPair { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.internetChip { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 20px; font-size: 10.5px; font-weight: 700; white-space: nowrap; border: 1px solid var(--border-color, #d1d5db); }
+.internetChip.normal { background: var(--status-active-bg); color: var(--status-active-text); border-color: var(--status-active-border); }
+.internetChip.internet-trouble { background: var(--status-broken-bg); color: var(--status-broken-text); border-color: var(--status-broken-border); }
+.internetChip.belum-diperiksa { background: var(--surface-2, #f8fafc); color: var(--text-secondary, #64748b); }
+
 .conditionChip {
   display: inline-block;
   font-size: 10.5px;

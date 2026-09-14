@@ -37,8 +37,9 @@ const CATEGORIES = [
 ];
 
 const STATUSES = ['Aktif', 'Maintenance', 'Rusak', 'Tidak Digunakan'];
-const REALTIME_STATUSES = ['Trouble', 'Internet Trouble', 'Network Trouble'];
-const ALL_STATUS_FILTERS = ['Aktif', ...REALTIME_STATUSES, 'Menunggu Monitoring'];
+const REALTIME_STATUSES = ['Online', 'Offline', 'Menunggu Monitoring'];
+const INTERNET_STATUSES = ['Normal', 'Internet Trouble', 'Belum Diperiksa'];
+const ALL_STATUS_FILTERS = [...REALTIME_STATUSES];
 const CONDITIONS = ['Baik', 'Cukup', 'Rusak'];
 
 
@@ -853,15 +854,21 @@ function App() {
   }, [toast]);
 
   // Statistik Aset
-  const counts = useMemo(() => {
+  const counts = useMemo(() => ({
+    total: assets.length,
+    aktif: assets.filter(x => (x.status || 'Aktif') === 'Aktif').length,
+    maint: assets.filter(x => x.status === 'Maintenance').length,
+    rusak: assets.filter(x => x.status === 'Rusak').length,
+    idle: assets.filter(x => x.status === 'Tidak Digunakan').length
+  }), [assets]);
+
+  const realtimeCounts = useMemo(() => {
     const live = assets.map(x => getLiveAssetStatus(x, agentMonitorStates, monitorStates));
     return {
-      total: assets.length,
-      aktif: live.filter(s => s === 'Aktif').length,
-      maint: live.filter(s => s === 'Maintenance').length,
-      rusak: live.filter(s => s === 'Rusak' || s === 'Trouble' || s === 'Network Trouble').length,
-      idle: live.filter(s => s === 'Tidak Digunakan').length,
-      internetTrouble: live.filter(s => s === 'Internet Trouble').length
+      online: live.filter(s => s === 'Online').length,
+      offline: live.filter(s => s === 'Offline').length,
+      pending: live.filter(s => s === 'Menunggu Monitoring').length,
+      internetTrouble: assets.filter(x => getLiveInternetStatus(x, agentMonitorStates, monitorStates) === 'Internet Trouble').length
     };
   }, [assets, agentMonitorStates, monitorStates]);
 
@@ -876,7 +883,11 @@ function App() {
     const check = async () => {
       const next = { ...monitorStatesRef.current };
       for (const asset of assets) {
-        const url = asset.monitorUrl || (asset.ipAddress ? `http://${asset.ipAddress}` : '');
+        let url = String(asset.monitorUrl || '').trim();
+        if (!url && asset.ipAddress) {
+          const firstIp = String(asset.ipAddress).match(/\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/);
+          if (firstIp) url = `http://${firstIp[0]}`;
+        }
         if (!url) continue;
         const started = Date.now();
         const controller = new AbortController();
@@ -1219,9 +1230,11 @@ function App() {
         {page === 'dashboard' && (
           <DashboardView
             counts={counts}
+            realtimeCounts={realtimeCounts}
             assets={assets}
             maint={maint}
             monitorStates={agentMonitorStates}
+            browserMonitorStates={monitorStates}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint) })).filter(x => x.trouble).sort((a,b) => b.score-a.score).slice(0,5)}
             setSelected={a => {
               setSelected(a);
@@ -1249,6 +1262,7 @@ function App() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             monitorStates={agentMonitorStates}
+            browserMonitorStates={monitorStates}
             openEdit={openEdit}
             removeAsset={removeAsset}
             onOpenDetail={a => {
@@ -1265,6 +1279,7 @@ function App() {
             setForm={setForm}
             saveAsset={saveAsset}
             monitorStates={agentMonitorStates}
+            browserMonitorStates={monitorStates}
             loading={loading}
             editing={editing}
             cancel={() => go('inventaris')}
@@ -1306,6 +1321,7 @@ function App() {
           <DetailModal
             asset={selected}
             monitorStates={agentMonitorStates}
+            browserMonitorStates={monitorStates}
             maintList={maint.filter(m => m.assetId === selected.id)}
             closeModal={() => {
               setSelected(null);
@@ -1477,25 +1493,37 @@ function getMonitorCheckedAtMs(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function getLiveAssetStatus(asset, monitorStates, browserMonitorStates = {}) {
-  // STATUS REALTIME SELALU BERDASARKAN HASIL MONITORING.
-  // Jangan pernah menggunakan asset.status/statusMode di sini. Status manual
-  // adalah metadata administratif dan tidak boleh membuat perangkat yang
-  // sebenarnya hidup terlihat 'Tidak Digunakan' atau sebaliknya.
-  const agent = monitorStates?.[asset.id];
-  const browser = browserMonitorStates?.[asset.id];
-  const st = agent || browser;
-  if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
+function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
+  // STATUS PERANGKAT REALTIME hanya menjawab: Online atau Offline.
+  // Status administratif dan kondisi internet sengaja tidak ikut menentukan hasil ini.
+  const agent = agentStates?.[asset.id];
+  const browser = browserStates?.[asset.id];
+  const agentMs = getMonitorCheckedAtMs(agent?.checkedAt);
+  const browserMs = getMonitorCheckedAtMs(browser?.checkedAt);
+  const now = Date.now();
+  const agentFresh = !!agent && typeof agent.online === 'boolean' && agentMs > 0 && (now - agentMs) <= 180000;
+  const browserFresh = !!browser && typeof browser.online === 'boolean' && browserMs > 0 && (now - browserMs) <= 90000;
+  const st = agentFresh ? agent : (browserFresh ? browser : null);
+  if (!st) return 'Menunggu Monitoring';
+  return st.online === true ? 'Online' : 'Offline';
+}
 
-  const checkedAt = getMonitorCheckedAtMs(st.checkedAt);
-  const fresh = checkedAt > 0 && (Date.now() - checkedAt) <= 120000;
-  if (!fresh) return 'Menunggu Monitoring';
-
-  if (st.status === 'internet_trouble') return 'Internet Trouble';
-  if (st.status === 'network_trouble') return 'Network Trouble';
-  if (st.online === false || st.status === 'device_trouble' || st.status === 'trouble' || st.status === 'offline') return 'Trouble';
-  if (st.online === true || st.status === 'online') return 'Aktif';
-  return 'Menunggu Monitoring';
+function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
+  // STATUS INTERNET berdiri sendiri. Perangkat bisa Online meskipun internet Trouble.
+  const agent = agentStates?.[asset.id];
+  const browser = browserStates?.[asset.id];
+  const agentMs = getMonitorCheckedAtMs(agent?.checkedAt);
+  const browserMs = getMonitorCheckedAtMs(browser?.checkedAt);
+  const now = Date.now();
+  const agentFresh = !!agent && agentMs > 0 && (now - agentMs) <= 180000;
+  const browserFresh = !!browser && browserMs > 0 && (now - browserMs) <= 90000;
+  const st = agentFresh ? agent : (browserFresh ? browser : null);
+  if (!st) return 'Belum Diperiksa';
+  const value = String(st.internetStatus || '').toLowerCase();
+  if (value === 'trouble' || st.status === 'internet_trouble') return 'Internet Trouble';
+  if (st.internetOnline === false) return 'Internet Trouble';
+  if (st.internetOnline === true || value === 'normal' || value === 'online' || value === 'ok') return 'Normal';
+  return 'Belum Diperiksa';
 }
 
 function getAdministrativeStatus(asset) {
@@ -1503,12 +1531,22 @@ function getAdministrativeStatus(asset) {
 }
 
 function StatusChip({ status }) {
-  const s = status || 'Aktif';
+  const s = status || 'Menunggu Monitoring';
   const cls = s.toLowerCase().replace(/\s+/g, '-');
   return (
     <span className={`statusChip ${cls}`}>
       <span className="statusDotInner" />
       {s}
+    </span>
+  );
+}
+
+function InternetChip({ status }) {
+  const s = status || 'Belum Diperiksa';
+  const cls = s.toLowerCase().replace(/\s+/g, '-');
+  return (
+    <span className={`internetChip ${cls}`} title="Status koneksi internet">
+      Internet: {s}
     </span>
   );
 }
@@ -1600,7 +1638,7 @@ function LoginView({ username, pass, setUsername, setPass, showPass, setShowPass
 // ==========================================
 // KOMPONEN DASHBOARD
 // ==========================================
-function DashboardView({ counts, assets, maint, monitorStates, aiAlerts, setSelected, go, openAdd }) {
+function DashboardView({ counts, realtimeCounts, assets, maint, monitorStates, browserMonitorStates, aiAlerts, setSelected, go, openAdd }) {
   const pct = n => (counts.total ? Math.round((n / counts.total) * 100) : 0);
 
   // Kategori terbanyak
@@ -1756,10 +1794,10 @@ function DashboardView({ counts, assets, maint, monitorStates, aiAlerts, setSele
 
           <div className="statusBarList">
             {[
-              { label: 'Aktif / Operasional', count: counts.aktif, colorClass: 'barActive' },
-              { label: 'Maintenance / Servis', count: counts.maint, colorClass: 'barMaint' },
-              { label: 'Rusak / Afkir', count: counts.rusak, colorClass: 'barBroken' },
-              { label: 'Tidak Digunakan (Cadangan)', count: counts.idle, colorClass: 'barIdle' }
+              { label: 'Online', count: realtimeCounts.online, colorClass: 'barActive' },
+              { label: 'Offline', count: realtimeCounts.offline, colorClass: 'barBroken' },
+              { label: 'Menunggu Monitoring', count: realtimeCounts.pending, colorClass: 'barMaint' },
+              { label: 'Internet Trouble', count: realtimeCounts.internetTrouble, colorClass: 'barIdle' }
             ].map(item => {
               const widthPct = counts.total ? (item.count / counts.total) * 100 : 0;
               return (
@@ -1824,7 +1862,7 @@ function DashboardView({ counts, assets, maint, monitorStates, aiAlerts, setSele
                     </span>
                   </div>
                 </div>
-                <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
+                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
               </div>
             ))}
 
@@ -1873,6 +1911,7 @@ function InventoryView({
   viewMode,
   setViewMode,
   monitorStates,
+  browserMonitorStates,
   openEdit,
   removeAsset,
   onOpenDetail,
@@ -1992,7 +2031,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
+                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
                 </div>
               </div>
 
@@ -2130,7 +2169,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
+                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">
@@ -2179,7 +2218,7 @@ function InventoryView({
 // ==========================================
 // KOMPONEN FORM INPUT PERANGKAT
 // ==========================================
-function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, monitorStates }) {
+function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, monitorStates, browserMonitorStates }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -2369,14 +2408,13 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
               <option value="realtime">Realtime Monitoring — otomatis</option>
               <option value="manual">Manual — gunakan status pilihan</option>
             </select>
-            <span className="fieldHelper">Mode Realtime membuat status tampilan mengikuti monitoring perangkat. Mode Manual hanya mengatur status administratif; status realtime tetap dipantau.</span>
+            <span className="fieldHelper">Status Administratif hanya untuk pencatatan kondisi/pengelolaan aset. Status Realtime tetap dipantau otomatis dan tidak dipengaruhi pilihan ini.</span>
           </div>
 
           <label className="formField">
             <span className="fieldLabel">Status Administratif</span>
             <select
               value={form.status || 'Aktif'}
-              disabled={(form.statusMode || 'realtime') !== 'manual'}
               onChange={e => setForm({ ...form, status: e.target.value })}
             >
               {STATUSES.map(s => (
@@ -2387,14 +2425,14 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
           </label>
 
           <div className="formField">
-            <span className="fieldLabel">Status Realtime Saat Ini</span>
+            <span className="fieldLabel">Status Perangkat Realtime</span>
             <div style={{minHeight:'42px',display:'flex',alignItems:'center',gap:'10px',padding:'0 12px',border:'1px solid var(--border-color, #e5e7eb)',borderRadius:'12px',background:'var(--surface-2, #f8fafc)'}}>
-              <StatusChip status={getLiveAssetStatus({ ...form, statusMode: 'realtime' }, monitorStates)} />
+              <div className="statusPair"><StatusChip status={getLiveAssetStatus({ ...form, statusMode: 'realtime' }, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus({ ...form, statusMode: 'realtime' }, monitorStates, browserMonitorStates)} /></div>
               {monitorStates?.[form.id]?.checkedAt && (
                 <span className="fieldHelper" style={{margin:0}}>Pemeriksaan terakhir: {new Date(getMonitorCheckedAtMs(monitorStates[form.id].checkedAt)).toLocaleTimeString('id-ID')}</span>
               )}
             </div>
-            <span className="fieldHelper">Status ini tidak bisa dipilih. Nilainya mengikuti monitor agent secara otomatis, terlepas dari Status Administratif.</span>
+            <span className="fieldHelper">Status perangkat otomatis: Online atau Offline. Status Internet ditampilkan terpisah dan tidak mengubah status perangkat.</span>
           </div>
 
           {/* FOTO UPLOAD */}
@@ -2463,7 +2501,7 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
 // ==========================================
 // MODAL DETAIL ASET
 // ==========================================
-function DetailModal({ asset, monitorStates, maintList, closeModal, onEdit, onDelete, addMaintenanceRecord, onPrintLabel }) {
+function DetailModal({ asset, monitorStates, browserMonitorStates, maintList, closeModal, onEdit, onDelete, addMaintenanceRecord, onPrintLabel }) {
   const [activeTab, setActiveTab] = useState('specs'); // 'specs' | 'maintenance' | 'qr'
   const [showAddMaint, setShowAddMaint] = useState(false);
   const [copiedKey, setCopiedKey] = useState('');
@@ -2508,7 +2546,7 @@ function DetailModal({ asset, monitorStates, maintList, closeModal, onEdit, onDe
             <div className="modalTags">
               <span className="codePill">{asset.kodeAset}</span>
               <span className="catPill">{asset.kategori}</span>
-              <StatusChip status={getLiveAssetStatus(asset, monitorStates)} />
+              <div className="statusPair"><StatusChip status={getLiveAssetStatus(asset, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(asset, monitorStates, browserMonitorStates)} /></div>
               <ConditionChip condition={asset.kondisi} />
             </div>
           </div>
@@ -3131,21 +3169,21 @@ function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
         <div><span className="smartEyebrow">REAL-TIME ASSET MONITOR</span><h2>Monitoring Perangkat</h2><p>Agent memeriksa perangkat dan memisahkan status perangkat dari indikasi sumber internet. Hasil dianalisis otomatis beserta keterangan penyebabnya.</p></div>
         <div className="monitorRefresh">Agent LAN • pemeriksaan setiap 30 detik</div>
       </div>
-      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Trouble</span></div></div>
+      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Offline</span></div></div>
       <div className="monitorList">
         {monitored.map(asset => {
           const st=monitorStates[asset.id] || {};
           const ai=analyzeAssetTrouble(asset,[]);
           const isOff=st.online===false;
           const internet = String(st.internetStatus || '').toLowerCase();
-          const statusLabel = st.status === 'internet_trouble' ? 'INTERNET TROUBLE' : st.status === 'network_trouble' ? 'NETWORK TROUBLE' : st.status === 'device_trouble' ? 'DEVICE TROUBLE' : isOff ? 'TROUBLE' : st.online ? 'ONLINE' : 'MENUNGGU';
+          const statusLabel = isOff ? 'OFFLINE' : st.online ? 'ONLINE' : 'MENUNGGU';
           const diagnosis = st.diagnosis || (ai.trouble ? `Indikasi kondisi aset ${ai.score}%` : 'Belum ada hasil diagnosis agent.');
           return <div className={`monitorRow ${isOff || internet==='trouble' ? 'isOffline':''}`} key={asset.id}>
             <div className={`monitorDot ${isOff || internet==='trouble' ? 'offline':st.online?'online':'pending'}`}></div>
             <div className="monitorMain">
               <b>{asset.nama}</b>
               <small>{asset.ipAddress || asset.monitorUrl}</small>
-              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'belum terverifikasi')} • Internet: {st.internetStatus || 'belum diperiksa'}</span>
+              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'belum terverifikasi')}</span><span><strong>Internet:</strong> {getLiveInternetStatus(asset, monitorStates, {})}</span>
               <span>{diagnosis}</span>
               <small className="monitorSource">{st.source === 'agent' ? `Agent LAN • ${st.method || 'monitoring'} • confidence ${st.confidence || '-'}%` : 'Browser monitor'}</small>
             </div>
