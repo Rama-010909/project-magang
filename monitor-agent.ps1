@@ -41,7 +41,16 @@ function Test-Target($asset) {
   if ($target -match '^https?://') {
     try { Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 4 | Out-Null; $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='HTTP merespons'} } catch { $sw.Stop(); return @{online=$false; latency=$null; method='HTTP'; reason='Tidak merespons HTTP'} }
   }
-  $hostName = $target -replace '^https?://','' -replace '/.*$',''
+  $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':\d+$',''
+  if ($hostName -match '^\s*$') { $sw.Stop(); return @{online=$false; latency=$null; method='invalid'; reason='IP/hostname tidak valid'} }
+  # Coba layanan web umum terlebih dahulu; banyak router memblokir ICMP tetapi tetap membuka HTTP/HTTPS.
+  foreach ($scheme in @('http','https')) {
+    try {
+      $webUrl = "$scheme://$hostName"
+      Invoke-WebRequest -Uri $webUrl -Method Head -UseBasicParsing -TimeoutSec 4 | Out-Null
+      $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method="$scheme"; reason="$scheme merespons"}
+    } catch {}
+  }
   try {
     $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -ErrorAction SilentlyContinue
     if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason='Ping berhasil'} }
