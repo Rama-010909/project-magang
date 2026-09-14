@@ -672,7 +672,7 @@ function App() {
   // Daftarkan Service Worker agar aplikasi siap menerima notifikasi latar belakang.
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/asset-notification-sw.js').catch(err => console.warn('PWA service worker:', err));
+      navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(err => console.warn('PWA service worker:', err));
     }
   }, []);
 
