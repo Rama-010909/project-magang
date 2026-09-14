@@ -42,7 +42,7 @@ if (Test-Path $EmbeddedAI) { . $EmbeddedAI }
 
 if (!(Test-Path $ConfigPath) -or [string]::IsNullOrWhiteSpace(([string]((Get-Content $ConfigPath -Raw | ConvertFrom-Json).topic))) ) {
   $topic = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 28 | ForEach-Object {[char]$_})
-  @{ topic=$topic; intervalSeconds=30; failThreshold=2; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+  @{ topic=$topic; intervalSeconds=30; failThreshold=1; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
   Write-Host "Config dibuat. TOPIC NOTIFIKASI: $topic" -ForegroundColor Green
   Write-Host "Simpan topic ini dan subscribe di aplikasi ntfy." -ForegroundColor Yellow
 }
@@ -50,6 +50,7 @@ $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 $Topic = [string]$config.topic
 $Interval = [int]$config.intervalSeconds
 $Threshold = [int]$config.failThreshold
+if ($Threshold -lt 1) { $Threshold = 1 }
 $States = @{}
 $LastAssetRefresh = Get-Date '2000-01-01'
 
@@ -267,22 +268,39 @@ while ($true) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $old = $States[$asset.id]
     $device = Test-Target $asset
-    # FIX9: hasil agent adalah sumber kebenaran. Tidak ada grace period dan tidak ada
-    # override dari AI/status administratif. Jika pemeriksaan kali ini gagal, kirim offline.
+    # Hindari status Offline palsu karena satu kali timeout. Perangkat baru dianggap Offline
+    # setelah gagal sebanyak $Threshold kali berturut-turut. Jika sebelumnya Online,
+    # satu kegagalan sementara tetap ditampilkan Online.
     $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
+    if (-not $device.online -and $old -and $old.online -eq $true -and $consecutiveFail -lt $Threshold) {
+      $device.online = $true
+      $device.reason = "Pemeriksaan kali ini timeout, tetapi belum mencapai batas $Threshold kali gagal berturut-turut."
+    }
     $internet = Get-InternetHealth
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
-    $troubleNow = ($ai.status -ne 'online')
+    # STATUS PERANGKAT adalah fakta hasil probe agent, bukan hasil AI.
+    # AI hanya membantu diagnosis/internet; tidak boleh membalik Online menjadi Offline atau sebaliknya.
+    if ($device.online) {
+      $ai.deviceStatus = 'aktif'
+      if ($ai.status -eq 'device_trouble' -or $ai.status -eq 'network_trouble') {
+        $ai.status = if ($internet.online) { 'online' } else { 'internet_trouble' }
+      }
+    } else {
+      $ai.deviceStatus = 'mati/tidak terjangkau'
+      $ai.status = 'device_trouble'
+    }
+    if ($internet.online) { $ai.internetStatus = 'aman' } else { $ai.internetStatus = 'trouble' }
+    $troubleNow = (-not [bool]$device.online)
     $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
     $writeOk = Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
     if (-not $writeOk) { Write-Host "[STATUS TIDAK TERKIRIM] $($asset.nama)" -ForegroundColor Red }
 
     $previousOnline = if($old -and $old.ContainsKey('online')) { [bool]$old.online } else { $null }
-    if ($previousOnline -eq $true -and $device.online -eq $false) {
-      Send-Ntfy $asset 'Peringatan Perangkat Offline' "$($asset.nama) ($($asset.kodeAset)) terdeteksi OFFLINE. $($device.reason)"
+    if ($device.online -eq $false -and $previousOnline -eq $true -and $consecutiveFail -ge $Threshold) {
+      Send-Ntfy $asset 'Peringatan Perangkat Offline' "$($asset.nama) ($($asset.kodeAset)) tidak dapat dijangkau. $($device.reason)"
     }
-    if ($previousOnline -eq $false -and $device.online -eq $true -and $config.notifyRecovery) {
-      Send-Ntfy $asset 'Aset Kembali Online' "$($asset.nama) ($($asset.kodeAset)) kembali ONLINE. $($device.reason)" 'default'
+    if ($device.online -eq $true -and $previousOnline -eq $false -and $old -and $config.notifyRecovery) {
+      Send-Ntfy $asset 'Perangkat Kembali Online' "$($asset.nama) ($($asset.kodeAset)) kembali online. $($device.reason)" 'default'
     }
     $States[$asset.id] = @{consecutiveFail=$consecutiveFail; consecutiveTrouble=$consecutiveTrouble; online=$device.online; status=$ai.status}
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $($asset.nama) -> $($ai.status.ToUpper()) | Perangkat: $($ai.deviceStatus) | Internet: $($ai.internetStatus) | $($ai.diagnosis)"

@@ -627,27 +627,36 @@ function App() {
     const unsub = onSnapshot(collection(db, 'monitorStatus'), snapshot => {
       const rows = {};
       snapshot.docs.forEach(d => { rows[d.id] = { id: d.id, ...d.data(), source: 'agent' }; });
-      const previous = monitorStatesRef.current || {};
       setAgentMonitorStates(rows);
       setMonitorStates(rows);
-
-      // Notifikasi realtime: hanya kirim ketika status agent benar-benar berubah
-      // Online -> Offline / Offline -> Online. Snapshot awal tidak memicu notifikasi.
-      if (Object.keys(previous).length) {
-        Object.values(rows).forEach(st => {
-          const before = previous[st.id];
-          if (!before || typeof before.online !== 'boolean' || typeof st.online !== 'boolean') return;
-          const asset = window.__assetRows?.find(a => a.id === st.id);
-          if (!asset || !notificationEnabledRef.current || !notificationTroubleRef.current) return;
-          if (before.online === true && st.online === false) {
-            showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline', aiReason: st.diagnosis || st.reason || 'Perangkat tidak merespons agent LAN' } });
-          }
-        });
-      }
       monitorStatesRef.current = rows;
     }, err => console.warn('Monitor agent status:', err));
     return () => unsub();
   }, [login]);
+
+  // Notifikasi realtime: hanya berdasarkan perubahan online boolean dari monitorStatus agent.
+  const previousAgentStatesRef = useRef(null);
+  useEffect(() => {
+    if (!login) return;
+    const current = agentMonitorStates || {};
+    const previous = previousAgentStatesRef.current;
+    if (previous) {
+      Object.keys(current).forEach(id => {
+        const before = previous[id];
+        const after = current[id];
+        if (!before || !after || typeof before.online !== 'boolean' || typeof after.online !== 'boolean') return;
+        if (before.online === true && after.online === false && notificationEnabledRef.current && notificationTroubleRef.current) {
+          const asset = assets.find(a => a.id === id);
+          if (asset) showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline', aiReason: after.reason || 'Perangkat tidak merespons monitoring agent' } });
+        }
+        if (before.online === false && after.online === true && notificationEnabledRef.current) {
+          const asset = assets.find(a => a.id === id);
+          if (asset) showAssetNotification({ type: 'safe', asset: { ...asset, status: 'Online', aiReason: after.reason || 'Perangkat kembali merespons monitoring agent' } });
+        }
+      });
+    }
+    previousAgentStatesRef.current = current;
+  }, [agentMonitorStates, assets, login]);
 
   // Search, Filter & View
   const [search, setSearch] = useState('');
@@ -815,7 +824,6 @@ function App() {
             }
             window.__assetNotificationSnapshot = new Map(rows.map(a => [a.id, a]));
 
-            window.__assetRows = rows;
             setAssets(rows);
             setIsFirebaseConnected(true);
             setFirebaseChecked(true);
@@ -896,8 +904,9 @@ function App() {
     monitorStatesRef.current = monitorStates;
   }, [monitorStates]);
 
-  // FIX9: status perangkat hanya dari monitorStatus Firestore yang ditulis agent LAN.
-  const monitorAlertsCount = assets.filter(a => agentMonitorStates[a.id]?.online === false).length;
+  // Monitoring realtime hanya dari Firestore monitorStatus yang ditulis LAN agent.
+
+  const monitorAlertsCount = assets.filter(a => monitorStates[a.id] && monitorStates[a.id].online === false && monitorStates[a.id].consecutiveFail >= 2).length;
 
   const filteredAssets = useMemo(() => {
     return assets
@@ -1481,19 +1490,18 @@ function getMonitorCheckedAtMs(value) {
 }
 
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
-  // FIX9: hanya monitorStatus dari agent LAN yang menentukan Online/Offline.
-  // Browser ping dan status administratif tidak pernah dipakai.
-  const st = agentStates?.[asset.id];
+  // Satu-satunya sumber status perangkat adalah monitorStatus dari LAN agent.
+  const st = agentStates?.[asset.id] || null;
   if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
-  return st.online ? 'Online' : 'Offline';
+  return st.online === true ? 'Online' : 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
-  const st = agentStates?.[asset.id];
+  const st = agentStates?.[asset.id] || null;
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
-  if (value === 'trouble' || st.status === 'internet_trouble' || st.internetOnline === false) return 'Internet Trouble';
-  if (st.internetOnline === true || value === 'normal' || value === 'online' || value === 'ok') return 'Normal';
+  if (value === 'trouble' || st.internetOnline === false) return 'Internet Trouble';
+  if (st.internetOnline === true || value === 'normal' || value === 'online' || value === 'ok' || value === 'aman') return 'Normal';
   return 'Belum Diperiksa';
 }
 
