@@ -1,6 +1,6 @@
 import { probeAsset } from '../lib/cloud-monitor.mjs';
 
-export const config = { runtime: 'nodejs20.x' };
+export const config = { runtime: 'nodejs' };
 
 const PROJECT_ID = 'it-asset-diskominfo-batang';
 const API_KEY = 'AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo';
