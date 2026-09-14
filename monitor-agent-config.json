@@ -1,16 +1,7 @@
-﻿{
-    "ports":  [
-                  80,
-                  443,
-                  22,
-                  23,
-                  8291,
-                  8080,
-                  9100,
-                  3389
-              ],
-    "notifyRecovery":  true,
-    "intervalSeconds":  30,
-    "failThreshold":  1,
-    "topic":  "nBkZVTF8umohLEIdNOUH9RXArij2"
+{
+  "topic": "",
+  "intervalSeconds": 30,
+  "failThreshold": 2,
+  "notifyRecovery": true,
+  "ports": [80, 443, 22, 23, 8291, 8080, 9100, 3389]
 }

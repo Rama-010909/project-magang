@@ -1839,7 +1839,7 @@ function DashboardView({ counts, realtimeCounts, assets, maint, monitorStates, b
                     </span>
                   </div>
                 </div>
-                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, agentMonitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, agentMonitorStates, {})} /></div>
+                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, monitorStates, {})} /></div>
               </div>
             ))}
 
@@ -2008,7 +2008,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, agentMonitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, agentMonitorStates, {})} /></div>
+                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, monitorStates, {})} /></div>
                 </div>
               </div>
 
@@ -2146,7 +2146,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, agentMonitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, agentMonitorStates, {})} /></div>
+                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, monitorStates, {})} /></div>
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">
