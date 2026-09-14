@@ -610,6 +610,13 @@ function App() {
   const [maint, setMaint] = useState([]);
   const [agentMonitorStates, setAgentMonitorStates] = useState({});
 
+  // Semua state monitoring dideklarasikan paling awal di App.
+  // Jangan letakkan state ini setelah useEffect/useMemo lain agar tidak ada
+  // kemungkinan Temporal Dead Zone (Cannot access ... before initialization)
+  // pada hasil bundling/minifikasi Vite.
+  const [monitorStates, setMonitorStates] = useState({});
+  const monitorStatesRef = useRef({});
+
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [firebaseChecked, setFirebaseChecked] = useState(false);
 
@@ -859,9 +866,6 @@ function App() {
   }, [assets, agentMonitorStates, monitorStates]);
 
   // Filter & Search
-  const [monitorStates, setMonitorStates] = useState({});
-  const monitorStatesRef = useRef({});
-  const [monitorTick, setMonitorTick] = useState(0);
 
   useEffect(() => {
     monitorStatesRef.current = monitorStates;
@@ -888,7 +892,7 @@ function App() {
           }
         } finally { clearTimeout(timer); }
       }
-      if (!cancelled) { setMonitorStates(next); monitorStatesRef.current = next; setMonitorTick(x => x + 1); }
+      if (!cancelled) { setMonitorStates(next); monitorStatesRef.current = next; }
     };
     if (assets.length) check();
     const id = setInterval(check, 30000);
