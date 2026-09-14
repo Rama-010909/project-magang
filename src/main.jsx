@@ -1820,7 +1820,7 @@ function DashboardView({ counts, assets, maint, monitorStates, aiAlerts, setSele
                     </span>
                   </div>
                 </div>
-                <StatusChip status={getLiveAssetStatus(a, agentMonitorStates, monitorStates)} />
+                <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
               </div>
             ))}
 
@@ -1988,7 +1988,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <StatusChip status={getLiveAssetStatus(a, agentMonitorStates, monitorStates)} />
+                  <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
                 </div>
               </div>
 
@@ -2126,7 +2126,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <StatusChip status={getLiveAssetStatus(a, agentMonitorStates, monitorStates)} />
+                      <StatusChip status={getLiveAssetStatus(a, monitorStates)} />
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">
@@ -2504,7 +2504,7 @@ function DetailModal({ asset, monitorStates, maintList, closeModal, onEdit, onDe
             <div className="modalTags">
               <span className="codePill">{asset.kodeAset}</span>
               <span className="catPill">{asset.kategori}</span>
-              <StatusChip status={getLiveAssetStatus(asset, agentMonitorStates, monitorStates)} />
+              <StatusChip status={getLiveAssetStatus(asset, monitorStates)} />
               <ConditionChip condition={asset.kondisi} />
             </div>
           </div>
