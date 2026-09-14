@@ -24,26 +24,44 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
 
   const title = trouble ? 'Peringatan Gangguan Aset' : 'Aset Kembali Aman';
   const body = `${after.nama || after.name || after.assetName || 'Perangkat'}: ${current}`;
-  const response = await getMessaging().sendEachForMulticast({
-    tokens,
-    data: {
-      assetId: String(event.params.assetId),
-      assetName: String(after.nama || after.name || after.assetName || 'Perangkat'),
-      status: current,
-      title,
-      body,
-      url: 'https://it-asset-management-diskominfo-batang.vercel.app/'
-    },
-    webpush: {
-      headers: { Urgency: trouble ? 'high' : 'normal' }
-    }
-  });
+  // FCM multicast maksimal 500 token per request. Pecah otomatis agar
+  // semua perangkat (HP maupun komputer) tetap menerima push.
+  const chunks = [];
+  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
 
+  let successCount = 0;
+  let failureCount = 0;
   const invalid = [];
-  response.responses.forEach((r, i) => {
-    const code = r.error?.code;
-    if (!r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(code)) invalid.push(tokens[i]);
-  });
-  await Promise.all(invalid.map(token => db.collection('notificationTokens').doc(token).delete().catch(() => null)));
-  console.log(`FCM: ${response.successCount} berhasil, ${response.failureCount} gagal`);
+
+  for (const chunk of chunks) {
+    const response = await getMessaging().sendEachForMulticast({
+      tokens: chunk,
+      data: {
+        assetId: String(event.params.assetId),
+        assetName: String(after.nama || after.name || after.assetName || 'Perangkat'),
+        status: current,
+        title,
+        body,
+        url: 'https://it-asset-management-diskominfo-batang.vercel.app/'
+      },
+      webpush: {
+        headers: { Urgency: trouble ? 'high' : 'normal' }
+      }
+    });
+
+    successCount += response.successCount;
+    failureCount += response.failureCount;
+    response.responses.forEach((r, i) => {
+      const code = r.error?.code;
+      if (!r.success && [
+        'messaging/registration-token-not-registered',
+        'messaging/invalid-registration-token'
+      ].includes(code)) invalid.push(chunk[i]);
+    });
+  }
+
+  await Promise.all(invalid.map(token =>
+    db.collection('notificationTokens').doc(token).delete().catch(() => null)
+  ));
+  console.log(`FCM background push: ${successCount} berhasil, ${failureCount} gagal`);
 });
