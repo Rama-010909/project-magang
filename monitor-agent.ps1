@@ -229,10 +229,28 @@ Confidence 0-100. Jika data tidak cukup membedakan penyebab, katakan bahwa penye
   }
 }
 
-function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$consecutiveTrouble,$asset) {
+function Set-FirestoreStatus(
+  [string]$assetId,
+  $device,
+  $internet,
+  $ai,
+  [int]$consecutiveFail,
+  [int]$consecutiveTrouble,
+  $asset
+) {
+  # Document ID monitor harus sama persis dengan document ID pada assets.
+  if ([string]::IsNullOrWhiteSpace($assetId)) {
+    Write-Host "[FIRESTORE WRITE SKIP] Asset ID kosong. MonitorStatus tidak ditulis." -ForegroundColor Red
+    return $false
+  }
+
   $paths=@('online','status','state','deviceStatus','internetOnline','internetStatus','latency','checkedAt','consecutiveFail','consecutiveTrouble','method','reason','diagnosis','confidence','nama','kodeAset','lokasi','ipAddress')
-  $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$($_)" }) -join '&'
-  $url="$ApiBase/monitorStatus/$assetId?$mask"
+  $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$_" }) -join '&'
+  $encodedAssetId=[System.Uri]::EscapeDataString($assetId)
+  $url = "$ApiBase/monitorStatus/$encodedAssetId" + "?" + $mask
+
+  Write-Host "[MONITOR WRITE] assetId='$assetId' -> monitorStatus/$assetId" -ForegroundColor DarkGray
+
   $fields=@{
     online=@{booleanValue=[bool]$device.online}; status=@{stringValue=[string]$ai.status}; state=@{stringValue=[string]$ai.status};
     deviceStatus=@{stringValue=[string]$ai.deviceStatus}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
@@ -279,7 +297,14 @@ while ($true) {
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
     $troubleNow = ($ai.status -ne 'online')
     $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
-    $writeOk = Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
+    $writeOk = Set-FirestoreStatus `
+      -assetId ([string]$asset.id) `
+      -device $device `
+      -internet $internet `
+      -ai $ai `
+      -consecutiveFail $consecutiveFail `
+      -consecutiveTrouble $consecutiveTrouble `
+      -asset $asset
     if (-not $writeOk) { Write-Host "[STATUS TIDAK TERKIRIM] $($asset.nama)" -ForegroundColor Red }
 
     $previousStatus = if($old){[string]$old.status}else{''}
