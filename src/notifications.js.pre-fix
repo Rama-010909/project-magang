@@ -139,7 +139,7 @@ export async function listenForegroundNotifications(callback) {
       // Show one through the active Service Worker.
       if (Notification.permission === 'granted') {
         showAssetNotification({
-          type: ['device_trouble', 'internet_trouble', 'network_trouble', 'trouble', 'offline', 'down', 'error', 'gangguan', 'unreachable'].includes(String(d.status || '').toLowerCase()) ? 'trouble' : 'safe',
+          type: ['trouble', 'offline', 'down', 'error'].includes(String(d.status || '').toLowerCase()) ? 'trouble' : 'safe',
           asset: {
             nama: d.assetName || n.title || d.title || 'Aset',
             status: d.status || n.body || d.body,

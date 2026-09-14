@@ -21,15 +21,15 @@ messaging.onBackgroundMessage((payload) => {
     body,
     icon: n.icon || d.icon || '/favicon.png',
     badge: n.badge || d.badge || '/favicon.png',
-    tag: d.assetId ? `asset-${d.assetId}` : 'asset-update',
+    tag: d.assetId ? `asset-${d.assetId}-${d.status || 'update'}` : `asset-update-${Date.now()}`,
     renotify: true,
-    data: { url: d.url || '/', assetId: d.assetId || '' }
+    data: { url: d.url || self.location.origin + '/', assetId: d.assetId || '' }
   });
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  const target = event.notification.data?.url || self.location.origin + '/';
   event.waitUntil(self.clients.matchAll({ type:'window', includeUncontrolled:true }).then(clients => {
     const existing = clients.find(c => c.url.startsWith(self.location.origin) && 'focus' in c);
     if (existing) return existing.focus().then(() => ('navigate' in existing && existing.url !== target) ? existing.navigate(target) : existing);

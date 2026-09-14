@@ -1,16 +1,14 @@
 # IT Asset Management - Local LAN Monitor (free, no Vercel env)
 # Run this script on a Windows PC that stays on inside the same LAN.
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'SilentlyContinue'
 $ProjectId = 'it-asset-diskominfo-batang'
 # Notifikasi HP memakai ntfy karena pengiriman FCM memerlukan backend/service-account.
 # Instal aplikasi ntfy di HP lalu subscribe ke topic yang tercetak saat agent pertama kali dijalankan.
 $ConfigPath = Join-Path $PSScriptRoot 'monitor-agent-config.json'
 $ApiBase = "https://firestore.googleapis.com/v1/projects/$ProjectId/databases/(default)/documents"
-$AIUrl = 'http://127.0.0.1:8080/v1/chat/completions'
-$AIModel = 'local-model'
-$AITimeoutSec = 45
-$EmbeddedAI = Join-Path $PSScriptRoot 'AI\embedded-diagnosis.ps1'
-if (Test-Path $EmbeddedAI) { . $EmbeddedAI }
+$OllamaUrl = 'http://127.0.0.1:11434/api/generate'
+$OllamaModel = 'qwen2.5:3b'
+$OllamaTimeoutSec = 45
 
 if (!(Test-Path $ConfigPath) -or [string]::IsNullOrWhiteSpace(([string]((Get-Content $ConfigPath -Raw | ConvertFrom-Json).topic))) ) {
   $topic = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 28 | ForEach-Object {[char]$_})
@@ -23,7 +21,6 @@ $Topic = [string]$config.topic
 $Interval = [int]$config.intervalSeconds
 $Threshold = [int]$config.failThreshold
 $States = @{}
-$LastAssetRefresh = Get-Date '2000-01-01'
 
 function Get-FieldValue($field) {
   if ($null -eq $field) { return '' }
@@ -109,17 +106,21 @@ function Get-InternetHealth {
   return @{online=$false; latency=$null; reason='Sumber internet jaringan monitoring bermasalah atau tidak stabil'}
 }
 
-function Get-RuleDiagnosis($asset,$device,$internet,$history) {
-  if (Get-Command Invoke-EmbeddedAIDiagnosis -ErrorAction SilentlyContinue) {
-    return Invoke-EmbeddedAIDiagnosis $asset $device $internet $history
+function Get-RuleDiagnosis($asset,$device,$internet) {
+  if ($device.online -and $internet.online) {
+    return @{status='online'; deviceStatus='aktif'; internetStatus='aman'; diagnosis='Perangkat aktif dan sumber internet jaringan monitoring terdeteksi aman.'; confidence=95; reason="$($device.reason); $($internet.reason)."}
   }
-  if ($device.online -and $internet.online) { return @{status='online';deviceStatus='aktif';internetStatus='aman';diagnosis='Perangkat aktif dan sumber internet terdeteksi aman.';confidence=95;reason="$($device.reason); $($internet.reason)."} }
-  if ($device.online -and !$internet.online) { return @{status='internet_trouble';deviceStatus='aktif';internetStatus='trouble';diagnosis='Perangkat aktif tetapi sumber internet bermasalah.';confidence=88;reason="$($device.reason); $($internet.reason)."} }
-  if (!$device.online -and $internet.online) { return @{status='device_trouble';deviceStatus='mati/tidak terjangkau';internetStatus='aman';diagnosis='Perangkat tidak terjangkau sementara internet monitoring aman.';confidence=90;reason="$($device.reason); $($internet.reason)."} }
-  return @{status='network_trouble';deviceStatus='tidak terjangkau';internetStatus='trouble';diagnosis='Perangkat dan internet monitoring sama-sama bermasalah; periksa jalur jaringan.';confidence=82;reason="$($device.reason); $($internet.reason)."}
+  if ($device.online -and !$internet.online) {
+    return @{status='internet_trouble'; deviceStatus='aktif'; internetStatus='trouble'; diagnosis='Perangkat masih aktif, tetapi ada indikasi gangguan pada sumber internet atau jalur keluar jaringan.'; confidence=88; reason="$($device.reason); $($internet.reason)."}
+  }
+  if (!$device.online -and $internet.online) {
+    return @{status='device_trouble'; deviceStatus='mati/tidak terjangkau'; internetStatus='aman'; diagnosis='Sumber internet jaringan monitoring aman, tetapi perangkat tidak terjangkau. Kemungkinan perangkat mati, kabel/LAN bermasalah, atau jalur menuju perangkat terputus.'; confidence=90; reason="$($device.reason); $($internet.reason)."}
+  }
+  return @{status='network_trouble'; deviceStatus='tidak terjangkau'; internetStatus='trouble'; diagnosis='Perangkat tidak terjangkau dan sumber internet jaringan monitoring juga bermasalah. Periksa koneksi jaringan sebelum menyimpulkan perangkat mati.'; confidence=82; reason="$($device.reason); $($internet.reason)."}
 }
-function Invoke-AIDiagnosis($asset,$device,$internet,$history) {
-  $fallback = Get-RuleDiagnosis $asset $device $internet $history
+
+function Invoke-OllamaDiagnosis($asset,$device,$internet) {
+  $fallback = Get-RuleDiagnosis $asset $device $internet
   $prompt = @"
 Anda adalah AI analis monitoring jaringan untuk sistem IT Asset Management Diskominfo Batang.
 Analisis DATA YANG DIBERIKAN SAJA. Jangan mengarang hasil ping, kabel, listrik, ISP, atau sensor yang tidak ada.
@@ -143,9 +144,9 @@ Kembalikan HANYA JSON valid tanpa markdown dengan format:
 Confidence 0-100. Jika data tidak cukup membedakan penyebab, katakan bahwa penyebab belum dapat dipastikan.
 "@
   try {
-    $body = @{model=$AIModel; messages=@(@{role='system'; content='Anda adalah analis monitoring jaringan. Jawab hanya berdasarkan data yang diberikan.'},@{role='user'; content=$prompt}); temperature=0.1; max_tokens=300; response_format=@{type='json_object'}} | ConvertTo-Json -Depth 10
-    $resp = Invoke-RestMethod -Uri $AIUrl -Method Post -ContentType 'application/json' -Body $body -TimeoutSec $AITimeoutSec
-    $text = [string]$resp.choices[0].message.content
+    $body = @{model=$OllamaModel; prompt=$prompt; stream=$false; format='json'; options=@{temperature=0.1}} | ConvertTo-Json -Depth 8
+    $resp = Invoke-RestMethod -Uri $OllamaUrl -Method Post -ContentType 'application/json' -Body $body -TimeoutSec $OllamaTimeoutSec
+    $text = [string]$resp.response
     if ([string]::IsNullOrWhiteSpace($text)) { return $fallback }
     $ai = $text | ConvertFrom-Json
     $status = [string]$ai.status
@@ -167,15 +168,15 @@ Confidence 0-100. Jika data tidak cukup membedakan penyebab, katakan bahwa penye
   }
 }
 
-function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$consecutiveTrouble,$asset) {
-  $paths=@('online','status','state','deviceStatus','internetOnline','internetStatus','latency','checkedAt','consecutiveFail','consecutiveTrouble','method','reason','diagnosis','confidence','nama','kodeAset','lokasi','ipAddress')
+function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail) {
+  $paths=@('online','status','state','deviceStatus','internetOnline','internetStatus','latency','checkedAt','consecutiveFail','method','reason','diagnosis','confidence')
   $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$($_)" }) -join '&'
   $url="$ApiBase/monitorStatus/$assetId?$mask"
   $fields=@{
     online=@{booleanValue=[bool]$device.online}; status=@{stringValue=[string]$ai.status}; state=@{stringValue=[string]$ai.status};
     deviceStatus=@{stringValue=[string]$ai.deviceStatus}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
     latency=@{integerValue=[string]($(if($null -eq $device.latency){0}else{$device.latency}))}; checkedAt=@{timestampValue=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')};
-    consecutiveFail=@{integerValue=[string]$consecutiveFail}; consecutiveTrouble=@{integerValue=[string]$consecutiveTrouble}; method=@{stringValue=[string]$device.method}; reason=@{stringValue=[string]$ai.reason}; diagnosis=@{stringValue=[string]$ai.diagnosis}; confidence=@{integerValue=[string]$ai.confidence}; nama=@{stringValue=[string]$asset.nama}; kodeAset=@{stringValue=[string]$asset.kodeAset}; lokasi=@{stringValue=[string]$asset.lokasi}; ipAddress=@{stringValue=[string]$asset.ipAddress}
+    consecutiveFail=@{integerValue=[string]$consecutiveFail}; method=@{stringValue=[string]$device.method}; reason=@{stringValue=[string]$ai.reason}; diagnosis=@{stringValue=[string]$ai.diagnosis}; confidence=@{integerValue=[string]$ai.confidence}
   }
   try { Invoke-RestMethod -Uri $url -Method Patch -ContentType 'application/json' -Body (@{fields=$fields}|ConvertTo-Json -Depth 8) -TimeoutSec 10 | Out-Null } catch {}
 }
@@ -186,8 +187,8 @@ function Send-Ntfy($asset,$title,$message,$priority='high') {
     Invoke-RestMethod -Uri "https://ntfy.sh/$Topic" -Method Post -Headers @{Title=$title; Priority=$priority; Tags='warning,computer'; Click="https://xii-tkj3-smknubandar.vercel.app"} -Body $message -TimeoutSec 10 | Out-Null
   } catch {}
 }
-Write-Host "IT Asset LAN Monitor + Local AI aktif. Interval $Interval detik." -ForegroundColor Cyan
-Write-Host "AI lokal: $AIModel ($AIUrl)" -ForegroundColor Magenta
+Write-Host "IT Asset LAN Monitor + Ollama AI aktif. Interval $Interval detik." -ForegroundColor Cyan
+Write-Host "AI lokal: $OllamaModel ($OllamaUrl)" -ForegroundColor Magenta
 Write-Host "Topic ntfy: $Topic" -ForegroundColor Yellow
 while ($true) {
   $assets = Get-Assets
@@ -195,21 +196,19 @@ while ($true) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $device = Test-Target $asset
     $internet = Get-InternetHealth
-    $ai = Invoke-AIDiagnosis $asset $device $internet $old
+    $ai = Invoke-OllamaDiagnosis $asset $device $internet
     $old = $States[$asset.id]
-    $troubleNow = ($ai.status -ne 'online')
-    $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
-    $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
-    Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
+    $fails = if ($device.online) { 0 } else { [int](if($old){$old.fails}else{0}) + 1 }
+    Set-FirestoreStatus $asset.id $device $internet $ai $fails
 
     $previousStatus = if($old){[string]$old.status}else{''}
-    if ($ai.status -ne 'online' -and $previousStatus -eq 'online' -and $consecutiveTrouble -ge $Threshold) {
+    if ($ai.status -ne 'online' -and $previousStatus -eq 'online' -and $fails -ge $Threshold) {
       Send-Ntfy $asset 'Peringatan Gangguan Aset' "$($asset.nama) ($($asset.kodeAset)): $($ai.diagnosis) Keterangan: $($ai.reason)"
     }
     if ($ai.status -eq 'online' -and $previousStatus -ne 'online' -and $old -and $config.notifyRecovery) {
       Send-Ntfy $asset 'Aset Kembali Aman' "$($asset.nama) ($($asset.kodeAset)) kembali aman. $($ai.diagnosis)" 'default'
     }
-    $States[$asset.id] = @{consecutiveFail=$consecutiveFail; consecutiveTrouble=$consecutiveTrouble; online=$device.online; status=$ai.status}
+    $States[$asset.id] = @{fails=$fails; online=$device.online; status=$ai.status}
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $($asset.nama) -> $($ai.status.ToUpper()) | Perangkat: $($ai.deviceStatus) | Internet: $($ai.internetStatus) | $($ai.diagnosis)"
   }
   Start-Sleep -Seconds $Interval

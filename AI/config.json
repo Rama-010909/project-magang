@@ -1,0 +1,13 @@
+{
+  "provider": "llama.cpp-local",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "modelFile": "AI/models/model.gguf",
+  "modelName": "local-model",
+  "noApiKey": true,
+  "fallbackEnabled": true,
+  "intervalSeconds": 30,
+  "failThreshold": 2,
+  "embeddedFallback": "AI/embedded-diagnosis.ps1",
+  "embeddedNoInstall": true,
+  "llmOptional": true
+}

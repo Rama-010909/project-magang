@@ -3045,22 +3045,37 @@ function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
   const monitored = assets.filter(a => a.monitorUrl || a.ipAddress);
   const offline = monitored.filter(a => monitorStates[a.id]?.online === false);
   const online = monitored.filter(a => monitorStates[a.id]?.online === true);
+  const internetTrouble = monitored.filter(a => String(monitorStates[a.id]?.internetStatus || '').toLowerCase() === 'trouble');
   return (
     <div className="monitorPage">
       <div className="pageIntro">
-        <div><span className="smartEyebrow">REAL-TIME ASSET MONITOR</span><h2>Monitoring Perangkat</h2><p>Monitoring LAN berjalan dari komputer agent di jaringan, sehingga pemeriksaan tetap berjalan walaupun website ditutup.</p></div>
+        <div><span className="smartEyebrow">REAL-TIME ASSET MONITOR</span><h2>Monitoring Perangkat</h2><p>Agent memeriksa perangkat dan memisahkan status perangkat dari indikasi sumber internet. Hasil dianalisis otomatis beserta keterangan penyebabnya.</p></div>
         <div className="monitorRefresh">Agent LAN • pemeriksaan setiap 30 detik</div>
       </div>
-      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Online</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Indikasi Offline</span></div></div>
+      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Trouble</span></div></div>
       <div className="monitorList">
-        {monitored.map(asset => { const st=monitorStates[asset.id]; const ai=analyzeAssetTrouble(asset,[]); const isOff=st?.online===false; return <div className={`monitorRow ${isOff?'isOffline':''}`} key={asset.id}>
-          <div className={`monitorDot ${isOff?'offline':st?.online?'online':'pending'}`}></div>
-          <div className="monitorMain"><b>{asset.nama}</b><small>{asset.ipAddress || asset.monitorUrl}</small><span>{ai.trouble ? `Indikasi trouble ${ai.score}%` : (isOff ? 'Tidak merespons pemeriksaan' : st?.online ? `Terhubung • ${st.latency || 0} ms` : 'Menunggu pemeriksaan')}</span><small className="monitorSource">{st?.source === 'agent' ? `Agent LAN • ${st?.method || 'monitoring'}` : 'Browser monitor'}</small></div>
-          <button className="btnLight" onClick={()=>go('inventaris')}>Lihat aset</button>
-        </div>})}
+        {monitored.map(asset => {
+          const st=monitorStates[asset.id] || {};
+          const ai=analyzeAssetTrouble(asset,[]);
+          const isOff=st.online===false;
+          const internet = String(st.internetStatus || '').toLowerCase();
+          const statusLabel = st.status === 'internet_trouble' ? 'INTERNET TROUBLE' : st.status === 'network_trouble' ? 'NETWORK TROUBLE' : st.status === 'device_trouble' ? 'DEVICE TROUBLE' : isOff ? 'TROUBLE' : st.online ? 'ONLINE' : 'MENUNGGU';
+          const diagnosis = st.diagnosis || (ai.trouble ? `Indikasi kondisi aset ${ai.score}%` : 'Belum ada hasil diagnosis agent.');
+          return <div className={`monitorRow ${isOff || internet==='trouble' ? 'isOffline':''}`} key={asset.id}>
+            <div className={`monitorDot ${isOff || internet==='trouble' ? 'offline':st.online?'online':'pending'}`}></div>
+            <div className="monitorMain">
+              <b>{asset.nama}</b>
+              <small>{asset.ipAddress || asset.monitorUrl}</small>
+              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'belum terverifikasi')} • Internet: {st.internetStatus || 'belum diperiksa'}</span>
+              <span>{diagnosis}</span>
+              <small className="monitorSource">{st.source === 'agent' ? `Agent LAN • ${st.method || 'monitoring'} • confidence ${st.confidence || '-'}%` : 'Browser monitor'}</small>
+            </div>
+            <button className="btnLight" onClick={()=>go('inventaris')}>Lihat aset</button>
+          </div>
+        })}
         {!monitored.length && <div className="monitorEmpty">Belum ada perangkat yang memiliki IP Address atau Alamat Monitoring. Tambahkan pada data aset untuk mulai dipantau.</div>}
       </div>
-      <div className="monitorNote"><b>Deteksi cerdas:</b> status/kondisi/keterangan aset dianalisis bersama hasil pemeriksaan koneksi. Sistem ini bukan pengganti monitoring jaringan berbasis ICMP/agent; perangkat LAN lokal dapat dibatasi oleh keamanan browser.</div>
+      <div className="monitorNote"><b>Analisis otomatis:</b> sistem membedakan perangkat aktif/mati atau tidak terjangkau, indikasi sumber internet aman/trouble, lalu memberikan diagnosis seperti perangkat mati, jalur LAN terputus, atau gangguan internet. Ini adalah analisis berbasis hasil pemeriksaan agent, bukan model AI yang dapat memastikan kondisi fisik tanpa sensor/API perangkat.</div>
     </div>
   );
 }

@@ -17,8 +17,9 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
   if (!trouble && !safe) return;
   if (previous === current) return;
 
-  const consecutiveTrouble = Number(after.consecutiveTrouble || 0);
-  if (trouble && consecutiveTrouble < 2) return;
+  // Jangan kirim alert gangguan pada satu kegagalan sesaat.
+  // Agent menyimpan consecutiveFail; default minimal 2 kali pemeriksaan.
+  if (trouble && Number(after.consecutiveFail || 0) < 2) return;
 
   const db = getFirestore();
   const snap = await db.collection('notificationTokens').where('enabled', '==', true).get();
@@ -26,11 +27,10 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
   if (!tokens.length) return;
 
   const name = after.nama || after.name || after.assetName || 'Perangkat';
-  const code = after.kodeAset ? ` (${after.kodeAset})` : '';
   const title = trouble ? 'Peringatan Gangguan Aset' : 'Aset Kembali Aman';
   const body = trouble
-    ? `${name}${code}: ${after.diagnosis || after.reason || 'Terjadi gangguan yang perlu diperiksa.'}`
-    : `${name}${code}: perangkat aktif dan kondisi jaringan terpantau aman.`;
+    ? `${name}: ${after.diagnosis || after.reason || 'Terjadi gangguan yang perlu diperiksa.'}`
+    : `${name}: perangkat aktif dan kondisi jaringan terpantau aman.`;
 
   const chunks = [];
   for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
@@ -39,10 +39,9 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
   let failureCount = 0;
 
   for (const chunk of chunks) {
-    // Data-only payload: Service Worker yang menampilkan notifikasi background.
-    // Ini mencegah notifikasi tampil dua kali.
     const response = await getMessaging().sendEachForMulticast({
       tokens: chunk,
+      notification: { title, body, icon: '/favicon.png', badge: '/favicon.png' },
       data: {
         assetId: String(event.params.assetId),
         assetName: String(name),
@@ -56,7 +55,8 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
         url: '/'
       },
       webpush: {
-        headers: { Urgency: trouble ? 'high' : 'normal' }
+        headers: { Urgency: trouble ? 'high' : 'normal' },
+        fcmOptions: { link: '/' }
       }
     });
     successCount += response.successCount;
