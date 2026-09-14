@@ -626,7 +626,12 @@ function App() {
     if (!login) return;
     const unsub = onSnapshot(collection(db, 'monitorStatus'), snapshot => {
       const rows = {};
-      snapshot.docs.forEach(d => { rows[d.id] = { id: d.id, ...d.data(), source: 'agent' }; });
+      snapshot.docs.forEach(d => {
+        const data = d.data() || {};
+        const row = { id: d.id, ...data, source: 'agent' };
+        rows[d.id] = row;
+        if (data.kodeAset) rows[String(data.kodeAset)] = row;
+      });
       setAgentMonitorStates(rows);
       setMonitorStates(rows);
       monitorStatesRef.current = rows;
@@ -646,11 +651,11 @@ function App() {
         const after = current[id];
         if (!before || !after || typeof before.online !== 'boolean' || typeof after.online !== 'boolean') return;
         if (before.online === true && after.online === false && notificationEnabledRef.current && notificationTroubleRef.current) {
-          const asset = assets.find(a => a.id === id);
+          const asset = assets.find(a => a.id === id || a.kodeAset === id);
           if (asset) showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline', aiReason: after.reason || 'Perangkat tidak merespons monitoring agent' } });
         }
         if (before.online === false && after.online === true && notificationEnabledRef.current) {
-          const asset = assets.find(a => a.id === id);
+          const asset = assets.find(a => a.id === id || a.kodeAset === id);
           if (asset) showAssetNotification({ type: 'safe', asset: { ...asset, status: 'Online', aiReason: after.reason || 'Perangkat kembali merespons monitoring agent' } });
         }
       });
@@ -906,7 +911,7 @@ function App() {
 
   // Monitoring realtime hanya dari Firestore monitorStatus yang ditulis LAN agent.
 
-  const monitorAlertsCount = assets.filter(a => monitorStates[a.id] && monitorStates[a.id].online === false && monitorStates[a.id].consecutiveFail >= 2).length;
+  const monitorAlertsCount = assets.filter(a => { const st = getMonitorState(a, agentMonitorStates); return st && st.online === false; }).length;
 
   const filteredAssets = useMemo(() => {
     return assets
@@ -1286,7 +1291,7 @@ function App() {
           <MonitoringView
             assets={assets}
             monitorStates={{ ...monitorStates, ...agentMonitorStates }}
-            aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: agentMonitorStates[a.id] || monitorStates[a.id] })).filter(x => x.trouble || x.monitor?.online === false)}
+            aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: getMonitorState(a, agentMonitorStates) })).filter(x => x.trouble || x.monitor?.online === false)}
             go={go}
           />
         )}
@@ -1489,15 +1494,19 @@ function getMonitorCheckedAtMs(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getMonitorState(asset, states = {}) {
+  return states?.[asset?.id] || states?.[asset?.kodeAset] || null;
+}
+
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
   // Satu-satunya sumber status perangkat adalah monitorStatus dari LAN agent.
-  const st = agentStates?.[asset.id] || null;
+  const st = getMonitorState(asset, agentStates);
   if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
   return st.online === true ? 'Online' : 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
-  const st = agentStates?.[asset.id] || null;
+  const st = getMonitorState(asset, agentStates);
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
   if (value === 'trouble' || st.internetOnline === false) return 'Internet Trouble';
@@ -2407,8 +2416,8 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
             <span className="fieldLabel">Status Perangkat Realtime</span>
             <div style={{minHeight:'42px',display:'flex',alignItems:'center',gap:'10px',padding:'0 12px',border:'1px solid var(--border-color, #e5e7eb)',borderRadius:'12px',background:'var(--surface-2, #f8fafc)'}}>
               <div className="statusPair"><StatusChip status={getLiveAssetStatus({ ...form, statusMode: 'realtime' }, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus({ ...form, statusMode: 'realtime' }, monitorStates, browserMonitorStates)} /></div>
-              {monitorStates?.[form.id]?.checkedAt && (
-                <span className="fieldHelper" style={{margin:0}}>Pemeriksaan terakhir: {new Date(getMonitorCheckedAtMs(monitorStates[form.id].checkedAt)).toLocaleTimeString('id-ID')}</span>
+              {getMonitorState(form, monitorStates)?.checkedAt && (
+                <span className="fieldHelper" style={{margin:0}}>Pemeriksaan terakhir: {new Date(getMonitorCheckedAtMs(getMonitorState(form, monitorStates).checkedAt)).toLocaleTimeString('id-ID')}</span>
               )}
             </div>
             <span className="fieldHelper">Status perangkat otomatis: Online atau Offline. Status Internet ditampilkan terpisah dan tidak mengubah status perangkat.</span>
@@ -3139,9 +3148,9 @@ function MaintenanceView({
 // ==========================================
 function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
   const monitored = assets.filter(a => a.monitorUrl || a.ipAddress);
-  const offline = monitored.filter(a => monitorStates[a.id]?.online === false);
-  const online = monitored.filter(a => monitorStates[a.id]?.online === true);
-  const internetTrouble = monitored.filter(a => String(monitorStates[a.id]?.internetStatus || '').toLowerCase() === 'trouble');
+  const offline = monitored.filter(a => getMonitorState(a, monitorStates)?.online === false);
+  const online = monitored.filter(a => getMonitorState(a, monitorStates)?.online === true);
+  const internetTrouble = monitored.filter(a => String(getMonitorState(a, monitorStates)?.internetStatus || '').toLowerCase() === 'trouble');
   return (
     <div className="monitorPage">
       <div className="pageIntro">
@@ -3151,7 +3160,7 @@ function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
       <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Offline</span></div></div>
       <div className="monitorList">
         {monitored.map(asset => {
-          const st=monitorStates[asset.id] || {};
+          const st=getMonitorState(asset, monitorStates) || {};
           const ai=analyzeAssetTrouble(asset,[]);
           const isOff=st.online===false;
           const internet = String(st.internetStatus || '').toLowerCase();
