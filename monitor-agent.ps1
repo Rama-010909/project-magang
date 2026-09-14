@@ -5,7 +5,9 @@ $ProjectId = 'it-asset-diskominfo-batang'
 # Notifikasi HP memakai ntfy karena pengiriman FCM memerlukan backend/service-account.
 # Instal aplikasi ntfy di HP lalu subscribe ke topic yang tercetak saat agent pertama kali dijalankan.
 $ConfigPath = Join-Path $PSScriptRoot 'monitor-agent-config.json'
+$FirebaseApiKey = "AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo"
 $ApiBase = "https://firestore.googleapis.com/v1/projects/$ProjectId/databases/(default)/documents"
+$ApiQuery = "?key=$FirebaseApiKey"
 $AIUrl = 'http://127.0.0.1:8080/v1/chat/completions'
 $AIModel = 'local-model'
 $AITimeoutSec = 45
@@ -34,12 +36,12 @@ function Get-FieldValue($field) {
 }
 function Get-Assets {
   try {
-    $r = Invoke-RestMethod -Uri "$ApiBase/assets?pageSize=1000" -Method Get -TimeoutSec 15
+    $r = Invoke-RestMethod -Uri "$ApiBase/assets?pageSize=1000&key=$FirebaseApiKey" -Method Get -TimeoutSec 15
     @($r.documents | ForEach-Object {
       $f = $_.fields
       [pscustomobject]@{ id=($_.name -split '/')[-1]; nama=(Get-FieldValue $f.nama); kodeAset=(Get-FieldValue $f.kodeAset); ipAddress=(Get-FieldValue $f.ipAddress); monitorUrl=(Get-FieldValue $f.monitorUrl); lokasi=(Get-FieldValue $f.lokasi) }
     })
-  } catch { @() }
+  } catch { Write-Host "[FIRESTORE READ ERROR] $($_.Exception.Message)" -ForegroundColor Red; return @() }
 }
 function Test-InternetHealth($hostName) {
   # Pemeriksaan koneksi internet secara nyata, bukan hanya ping IP WAN.
@@ -198,7 +200,7 @@ Confidence 0-100. Jika data tidak cukup membedakan penyebab, katakan bahwa penye
 function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$consecutiveTrouble,$asset) {
   $paths=@('online','status','state','deviceStatus','internetOnline','internetStatus','latency','checkedAt','consecutiveFail','consecutiveTrouble','method','reason','diagnosis','confidence','nama','kodeAset','lokasi','ipAddress')
   $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$($_)" }) -join '&'
-  $url="$ApiBase/monitorStatus/$assetId?$mask"
+  $url="$ApiBase/monitorStatus/$assetId?$mask&key=$FirebaseApiKey"
   $fields=@{
     online=@{booleanValue=[bool]$device.online}; status=@{stringValue=[string]$ai.status}; state=@{stringValue=[string]$ai.status};
     deviceStatus=@{stringValue=[string]$ai.deviceStatus}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
@@ -219,6 +221,8 @@ Write-Host "AI lokal: $AIModel ($AIUrl)" -ForegroundColor Magenta
 Write-Host "Topic ntfy: $Topic" -ForegroundColor Yellow
 while ($true) {
   $assets = Get-Assets
+  Write-Host "[$(Get-Date -Format HH:mm:ss)] Aset terbaca: $($assets.Count)" -ForegroundColor DarkCyan
+  if ($assets.Count -eq 0) { Write-Host "Tidak ada aset yang terbaca dari Firestore. Cek koneksi/Firebase Rules/API Key." -ForegroundColor Yellow }
   foreach ($asset in $assets) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $old = $States[$asset.id]

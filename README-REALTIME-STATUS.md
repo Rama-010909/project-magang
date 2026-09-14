@@ -1,17 +1,11 @@
 # Status Operasional Realtime
 
-Status yang tampil pada kartu inventaris, dashboard, filter status, detail aset, dan form edit sekarang membaca `monitorStatus/{assetId}` dari Firestore jika hasil monitoring masih fresh.
+Status Operasional memiliki dua mode:
+- **Realtime Monitoring**: sistem membaca `monitorStatus/{assetId}` dari agent.
+- **Manual**: admin dapat memilih status administrasi.
 
-## Aturan
-- `online` -> **Aktif**
-- `device_trouble` / `offline` -> **Trouble**
-- `internet_trouble` -> **Internet Trouble**
-- `network_trouble` -> **Network Trouble**
-- Jika hasil monitoring lebih lama dari 120 detik atau belum ada -> kembali ke status administrasi aset.
+Jika realtime tetap `Menunggu Monitoring`, jalankan `JALANKAN-MONITOR-AI.bat` dan lihat konsol. Harus muncul `Aset terbaca: N` dan setiap aset menghasilkan `-> ONLINE` atau status trouble.
 
-Status administrasi pada dokumen `assets` tidak dihapus/ditimpa oleh agent. Dengan begitu status seperti Maintenance/Rusak tetap aman sebagai data inventaris, sementara tampilan operasional mengikuti kondisi realtime.
+Agent sekarang memakai Firebase Firestore REST API + API key proyek untuk membaca aset dan menulis `monitorStatus`.
 
-## Agent
-Jalankan `JALANKAN-MONITOR-AI.bat` pada PC Windows yang tetap menyala dan berada pada jaringan yang dapat menjangkau IP perangkat.
-
-Interval default: 30 detik. Setelah perangkat dimatikan, status biasanya berubah setelah satu-dua siklus pemeriksaan.
+Status realtime dianggap valid selama hasil pengecekan terakhir berumur maksimal 120 detik.
