@@ -1503,9 +1503,15 @@ function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
   const now = Date.now();
   const agentFresh = !!agent && typeof agent.online === 'boolean' && agentMs > 0 && (now - agentMs) <= 180000;
   const browserFresh = !!browser && typeof browser.online === 'boolean' && browserMs > 0 && (now - browserMs) <= 90000;
-  const st = agentFresh ? agent : (browserFresh ? browser : null);
+  // Agent LAN adalah sumber utama. Browser fallback hanya boleh memberi sinyal Online;
+  // fetch dari HTTPS ke perangkat LAN sering diblokir browser (mixed content/CORS),
+  // sehingga hasil gagal dari browser tidak boleh membuat perangkat tampak Offline.
+  const st = agentFresh ? agent : (browserFresh && browser?.online === true ? browser : null);
   if (!st) return 'Menunggu Monitoring';
-  return st.online === true ? 'Online' : 'Offline';
+  if (st.online === true) return 'Online';
+  // Tampilkan Offline hanya setelah agent mencatat kegagalan berturut-turut sesuai threshold.
+  const fails = Number(st.consecutiveFail || 0);
+  return fails >= 2 ? 'Offline' : 'Menunggu Monitoring';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {

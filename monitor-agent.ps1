@@ -227,10 +227,17 @@ while ($true) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $old = $States[$asset.id]
     $device = Test-Target $asset
+    # Hindari status Offline palsu karena satu kali timeout. Perangkat baru dianggap Offline
+    # setelah gagal sebanyak $Threshold kali berturut-turut. Jika sebelumnya Online,
+    # satu kegagalan sementara tetap ditampilkan Online.
+    $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
+    if (-not $device.online -and $old -and $old.online -eq $true -and $consecutiveFail -lt $Threshold) {
+      $device.online = $true
+      $device.reason = "Pemeriksaan kali ini timeout, tetapi belum mencapai batas $Threshold kali gagal berturut-turut."
+    }
     $internet = Get-InternetHealth
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
     $troubleNow = ($ai.status -ne 'online')
-    $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
     $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
     Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
 
