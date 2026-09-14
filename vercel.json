@@ -3,14 +3,6 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
-    "api/monitor.js": {
-      "maxDuration": 60
-    }
-  },
-  "crons": [
-    {
-      "path": "/api/monitor",
-      "schedule": "* * * * *"
-    }
-  ]
+    "api/monitor.js": { "maxDuration": 60 }
+  }
 }

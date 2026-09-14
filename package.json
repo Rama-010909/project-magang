@@ -13,8 +13,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "leaflet": "^1.9.4",
-    "firebase-admin": "^13.0.0"
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.2",

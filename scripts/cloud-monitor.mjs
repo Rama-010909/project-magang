@@ -1,16 +1,7 @@
 import { probeAsset } from '../lib/cloud-monitor.mjs';
 
-export const config = { runtime: 'nodejs20.x' };
-
 const PROJECT_ID = 'it-asset-diskominfo-batang';
 const API_KEY = 'AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo';
-
-function authorized(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${secret}` || req.headers['x-monitor-secret'] === secret;
-}
 
 function parseFields(fields = {}) {
   const out = {};
@@ -26,7 +17,6 @@ function parseFields(fields = {}) {
   }
   return out;
 }
-
 function toValue(v) {
   if (v === null || v === undefined) return { nullValue: null };
   if (typeof v === 'string') return { stringValue: v };
@@ -37,61 +27,33 @@ function toValue(v) {
   if (typeof v === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, toValue(x)])) } };
   return { stringValue: String(v) };
 }
-
 async function getAnonToken() {
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(API_KEY)}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true })
-  });
+  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(API_KEY)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }) });
   const data = await r.json();
-  if (!r.ok) throw new Error(data?.error?.message || 'Anonymous Firebase Auth gagal. Aktifkan Anonymous sign-in di Firebase Authentication.');
+  if (!r.ok) throw new Error(data?.error?.message || 'Anonymous Firebase Auth gagal. Aktifkan Anonymous sign-in.');
   return data.idToken;
 }
-
 async function firestoreFetch(path, token, options = {}) {
-  const r = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${path}`, {
-    ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-  });
+  const r = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${path}`, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}`, 'content-type': 'application/json' } });
   const data = await r.json();
   if (!r.ok) throw new Error(data?.error?.message || `Firestore request failed: ${r.status}`);
   return data;
 }
-
-async function runMonitor() {
+async function main() {
   const token = await getAnonToken();
   const data = await firestoreFetch('assets?pageSize=1000', token);
   const assets = (data.documents || []).map(doc => ({ id: doc.name.split('/').pop(), ...parseFields(doc.fields || {}) }));
-  const results = [];
   const checkedAt = new Date();
-
+  const results = [];
   for (let i = 0; i < assets.length; i += 10) {
     const batch = assets.slice(i, i + 10);
     await Promise.all(batch.map(async asset => {
       const probe = await probeAsset(asset);
-      const body = { fields: {
-        assetId: toValue(asset.id),
-        kodeAset: toValue(String(asset.kodeAset || '')),
-        nama: toValue(String(asset.nama || asset.name || '')),
-        online: toValue(!!probe.online),
-        status: toValue(probe.online ? 'online' : 'offline'),
-        deviceStatus: toValue(probe.online ? 'Online' : 'Offline'),
-        internetStatus: toValue(probe.online ? 'Normal' : 'Belum Diperiksa'),
-        reason: toValue(String(probe.reason || '')),
-        method: toValue(String(probe.method || '')),
-        latency: toValue(Number(probe.latency || 0)),
-        port: toValue(probe.port || null),
-        checkedAt: toValue(checkedAt),
-        source: toValue('cloud-monitor-free')
-      }};
+      const body = { fields: { assetId: toValue(asset.id), kodeAset: toValue(String(asset.kodeAset || '')), nama: toValue(String(asset.nama || asset.name || '')), online: toValue(!!probe.online), status: toValue(probe.online ? 'online' : 'offline'), deviceStatus: toValue(probe.online ? 'Online' : 'Offline'), internetStatus: toValue(probe.online ? 'Normal' : 'Belum Diperiksa'), reason: toValue(String(probe.reason || '')), method: toValue(String(probe.method || '')), latency: toValue(Number(probe.latency || 0)), port: toValue(probe.port || null), checkedAt: toValue(checkedAt), source: toValue('cloud-monitor-free') } };
       await firestoreFetch(`monitorStatus/${encodeURIComponent(asset.id)}`, token, { method: 'PATCH', body: JSON.stringify(body) });
       results.push({ assetId: asset.id, online: !!probe.online, reason: probe.reason });
     }));
   }
-  return { checked: assets.length, online: results.filter(x => x.online).length, offline: results.filter(x => !x.online).length, checkedAt: checkedAt.toISOString() };
+  console.log(JSON.stringify({ ok: true, checked: assets.length, online: results.filter(x => x.online).length, offline: results.filter(x => !x.online).length, checkedAt: checkedAt.toISOString() }, null, 2));
 }
-
-export default async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
-  if (!authorized(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  try { return res.status(200).json({ ok: true, ...(await runMonitor()) }); }
-  catch (e) { console.error(e); return res.status(500).json({ ok: false, error: String(e?.message || e) }); }
-}
+main().catch(err => { console.error(err); process.exit(1); });
