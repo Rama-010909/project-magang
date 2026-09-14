@@ -7,31 +7,33 @@ $ProjectId = 'it-asset-diskominfo-batang'
 $ConfigPath = Join-Path $PSScriptRoot 'monitor-agent-config.json'
 $FirebaseApiKey = "AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo"
 $ApiBase = "https://firestore.googleapis.com/v1/projects/$ProjectId/databases/(default)/documents"
-$ApiQuery = "?key=$FirebaseApiKey"
+$ApiQuery = ""
 $FirebaseIdToken = $null
 
 function Get-FirebaseIdToken {
-  # Tenta autenticação anônima agar agent tetap bisa membaca/menulis Firestore
-  # ketika Firestore Rules mensyaratkan request.auth. Jika Anonymous Auth belum
-  # diaktifkan, agent otomatis tetap mencoba mode API-key/public rules.
-  try {
-    $u = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$FirebaseApiKey"
-    $r = Invoke-RestMethod -Uri $u -Method Post -ContentType "application/json" -Body (@{returnSecureToken=$true}|ConvertTo-Json) -TimeoutSec 15
-    if ($r.idToken) { return [string]$r.idToken }
-  } catch {
-    Write-Host "[AUTH INFO] Anonymous Auth tidak tersedia/ditolak; mencoba akses Firestore biasa. $($_.Exception.Message)" -ForegroundColor Yellow
-  }
+  # Firestore REST dapat memakai Firebase ID token atau request tanpa token
+  # jika Security Rules memang mengizinkan akses publik. API key proyek ini
+  # tidak dipakai pada endpoint Firestore karena key dapat dibatasi oleh HTTP referrer.
   return $null
 }
 
 function Invoke-FirestoreRest($Uri,$Method="Get",$Body=$null) {
   $headers = @{}
   if ($FirebaseIdToken) { $headers["Authorization"] = "Bearer $FirebaseIdToken" }
-  if ($null -ne $Body) {
-    return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $headers -ContentType "application/json" -Body $Body -TimeoutSec 15
+  try {
+    if ($null -ne $Body) {
+      return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $headers -ContentType "application/json" -Body $Body -TimeoutSec 15
+    }
+    return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $headers -TimeoutSec 15
+  } catch {
+    $detail = $_.Exception.Message
+    try {
+      if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $detail = "$detail | $($_.ErrorDetails.Message)" }
+    } catch {}
+    throw $detail
   }
-  return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $headers -TimeoutSec 15
 }
+
 $AIUrl = 'http://127.0.0.1:8080/v1/chat/completions'
 $AIModel = 'local-model'
 $AITimeoutSec = 45
@@ -60,7 +62,7 @@ function Get-FieldValue($field) {
 }
 function Get-Assets {
   try {
-    $r = Invoke-FirestoreRest -Uri "$ApiBase/assets?pageSize=1000&key=$FirebaseApiKey" -Method Get
+    $r = Invoke-FirestoreRest -Uri "$ApiBase/assets?pageSize=1000" -Method Get
     @($r.documents | ForEach-Object {
       $f = $_.fields
       [pscustomobject]@{ id=($_.name -split '/')[-1]; nama=(Get-FieldValue $f.nama); kodeAset=(Get-FieldValue $f.kodeAset); ipAddress=(Get-FieldValue $f.ipAddress); monitorUrl=(Get-FieldValue $f.monitorUrl); lokasi=(Get-FieldValue $f.lokasi) }
@@ -230,7 +232,7 @@ Confidence 0-100. Jika data tidak cukup membedakan penyebab, katakan bahwa penye
 function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$consecutiveTrouble,$asset) {
   $paths=@('online','status','state','deviceStatus','internetOnline','internetStatus','latency','checkedAt','consecutiveFail','consecutiveTrouble','method','reason','diagnosis','confidence','nama','kodeAset','lokasi','ipAddress')
   $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$($_)" }) -join '&'
-  $url="$ApiBase/monitorStatus/$assetId?$mask&key=$FirebaseApiKey"
+  $url="$ApiBase/monitorStatus/$assetId?$mask"
   $fields=@{
     online=@{booleanValue=[bool]$device.online}; status=@{stringValue=[string]$ai.status}; state=@{stringValue=[string]$ai.status};
     deviceStatus=@{stringValue=[string]$ai.deviceStatus}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
@@ -256,11 +258,11 @@ Write-Host "Pengecekan ICMP memakai System.Net.NetworkInformation.Ping (PowerShe
 Write-Host "AI lokal: $AIModel ($AIUrl)" -ForegroundColor Magenta
 Write-Host "Topic ntfy: $Topic" -ForegroundColor Yellow
 $FirebaseIdToken = Get-FirebaseIdToken
-if ($FirebaseIdToken) { Write-Host "Firestore Auth: Anonymous OK" -ForegroundColor Green } else { Write-Host "Firestore Auth: API Key/Public Rules mode" -ForegroundColor Yellow }
+Write-Host "Firestore: REST tanpa API key (mengikuti Firestore Security Rules)" -ForegroundColor Yellow
 while ($true) {
   $assets = Get-Assets
   Write-Host "[$(Get-Date -Format HH:mm:ss)] Aset terbaca: $($assets.Count)" -ForegroundColor DarkCyan
-  if ($assets.Count -eq 0) { Write-Host "Tidak ada aset yang terbaca dari Firestore. Cek koneksi/Firebase Rules/API Key." -ForegroundColor Yellow }
+  if ($assets.Count -eq 0) { Write-Host "Tidak ada aset yang terbaca dari Firestore. Jika muncul PERMISSION_DENIED, periksa Firestore Rules agar agent boleh membaca assets dan menulis monitorStatus." -ForegroundColor Yellow }
   foreach ($asset in $assets) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $old = $States[$asset.id]
