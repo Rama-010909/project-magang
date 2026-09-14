@@ -1501,17 +1501,15 @@ function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
   const agentMs = getMonitorCheckedAtMs(agent?.checkedAt);
   const browserMs = getMonitorCheckedAtMs(browser?.checkedAt);
   const now = Date.now();
-  const agentFresh = !!agent && typeof agent.online === 'boolean' && agentMs > 0 && (now - agentMs) <= 180000;
+  const agentValid = !!agent && typeof agent.online === 'boolean';
   const browserFresh = !!browser && typeof browser.online === 'boolean' && browserMs > 0 && (now - browserMs) <= 90000;
-  // Agent LAN adalah sumber utama. Browser fallback hanya boleh memberi sinyal Online;
-  // fetch dari HTTPS ke perangkat LAN sering diblokir browser (mixed content/CORS),
-  // sehingga hasil gagal dari browser tidak boleh membuat perangkat tampak Offline.
-  const st = agentFresh ? agent : (browserFresh && browser?.online === true ? browser : null);
+  // Agent LAN adalah sumber utama. Jika agent sudah mengirim record dengan nilai online
+  // boolean, gunakan hasil tersebut walaupun timestamp tidak terbaca oleh SDK. Timestamp
+  // hanya dipakai untuk informasi kesegaran, bukan untuk mengubah Online menjadi Menunggu.
+  const st = agentValid ? agent : (browserFresh && browser?.online === true ? browser : null);
   if (!st) return 'Menunggu Monitoring';
   if (st.online === true) return 'Online';
-  // Tampilkan Offline hanya setelah agent mencatat kegagalan berturut-turut sesuai threshold.
-  const fails = Number(st.consecutiveFail || 0);
-  return fails >= 2 ? 'Offline' : 'Menunggu Monitoring';
+  return 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
@@ -3189,7 +3187,7 @@ function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
             <div className="monitorMain">
               <b>{asset.nama}</b>
               <small>{asset.ipAddress || asset.monitorUrl}</small>
-              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'belum terverifikasi')}</span><span><strong>Internet:</strong> {getLiveInternetStatus(asset, monitorStates, {})}</span>
+              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'offline')}</span><span><strong>Internet:</strong> {getLiveInternetStatus(asset, monitorStates, {})}</span>
               <span>{diagnosis}</span>
               <small className="monitorSource">{st.source === 'agent' ? `Agent LAN • ${st.method || 'monitoring'} • confidence ${st.confidence || '-'}%` : 'Browser monitor'}</small>
             </div>

@@ -1,4 +1,4 @@
-﻿# IT Asset Management - Local LAN Monitor (free, no Vercel env)
+# IT Asset Management - Local LAN Monitor (free, no Vercel env)
 # Run this script on a Windows PC that stays on inside the same LAN.
 $ErrorActionPreference = 'Continue'
 $ProjectId = 'it-asset-diskominfo-batang'
@@ -8,6 +8,30 @@ $ConfigPath = Join-Path $PSScriptRoot 'monitor-agent-config.json'
 $FirebaseApiKey = "AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo"
 $ApiBase = "https://firestore.googleapis.com/v1/projects/$ProjectId/databases/(default)/documents"
 $ApiQuery = "?key=$FirebaseApiKey"
+$FirebaseIdToken = $null
+
+function Get-FirebaseIdToken {
+  # Tenta autenticação anônima agar agent tetap bisa membaca/menulis Firestore
+  # ketika Firestore Rules mensyaratkan request.auth. Jika Anonymous Auth belum
+  # diaktifkan, agent otomatis tetap mencoba mode API-key/public rules.
+  try {
+    $u = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$FirebaseApiKey"
+    $r = Invoke-RestMethod -Uri $u -Method Post -ContentType "application/json" -Body (@{returnSecureToken=$true}|ConvertTo-Json) -TimeoutSec 15
+    if ($r.idToken) { return [string]$r.idToken }
+  } catch {
+    Write-Host "[AUTH INFO] Anonymous Auth tidak tersedia/ditolak; mencoba akses Firestore biasa. $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+  return $null
+}
+
+function Invoke-FirestoreRest($Uri,$Method="Get",$Body=$null) {
+  $headers = @{}
+  if ($FirebaseIdToken) { $headers["Authorization"] = "Bearer $FirebaseIdToken" }
+  if ($null -ne $Body) {
+    return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $headers -ContentType "application/json" -Body $Body -TimeoutSec 15
+  }
+  return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $headers -TimeoutSec 15
+}
 $AIUrl = 'http://127.0.0.1:8080/v1/chat/completions'
 $AIModel = 'local-model'
 $AITimeoutSec = 45
@@ -36,7 +60,7 @@ function Get-FieldValue($field) {
 }
 function Get-Assets {
   try {
-    $r = Invoke-RestMethod -Uri "$ApiBase/assets?pageSize=1000&key=$FirebaseApiKey" -Method Get -TimeoutSec 15
+    $r = Invoke-FirestoreRest -Uri "$ApiBase/assets?pageSize=1000&key=$FirebaseApiKey" -Method Get
     @($r.documents | ForEach-Object {
       $f = $_.fields
       [pscustomobject]@{ id=($_.name -split '/')[-1]; nama=(Get-FieldValue $f.nama); kodeAset=(Get-FieldValue $f.kodeAset); ipAddress=(Get-FieldValue $f.ipAddress); monitorUrl=(Get-FieldValue $f.monitorUrl); lokasi=(Get-FieldValue $f.lokasi) }
@@ -108,8 +132,14 @@ function Test-Target($asset) {
 
     $hostName = $target
     try {
-      $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -TimeoutSeconds 4 -ErrorAction SilentlyContinue
-      if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason="IP perangkat $hostName merespons ping"} }
+      # System.Net.NetworkInformation.Ping kompatibel dengan Windows PowerShell 5.1
+      # dan tidak bergantung pada parameter -TimeoutSeconds yang hanya tersedia pada
+      # versi PowerShell tertentu.
+      $pinger = New-Object System.Net.NetworkInformation.Ping
+      $reply = $pinger.Send($hostName, 3500)
+      if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+        $sw.Stop(); return @{online=$true; latency=[int]$reply.RoundtripTime; method='ICMP'; reason="IP perangkat $hostName merespons ping"}
+      }
     } catch {}
 
     foreach ($port in @(443,80,8291,8728,8729,8080,9100,3389)) {
@@ -207,7 +237,11 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
     latency=@{integerValue=[string]($(if($null -eq $device.latency){0}else{$device.latency}))}; checkedAt=@{timestampValue=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')};
     consecutiveFail=@{integerValue=[string]$consecutiveFail}; consecutiveTrouble=@{integerValue=[string]$consecutiveTrouble}; method=@{stringValue=[string]$device.method}; reason=@{stringValue=[string]$ai.reason}; diagnosis=@{stringValue=[string]$ai.diagnosis}; confidence=@{integerValue=[string]$ai.confidence}; nama=@{stringValue=[string]$asset.nama}; kodeAset=@{stringValue=[string]$asset.kodeAset}; lokasi=@{stringValue=[string]$asset.lokasi}; ipAddress=@{stringValue=[string]$asset.ipAddress}
   }
-  try { Invoke-RestMethod -Uri $url -Method Patch -ContentType 'application/json' -Body (@{fields=$fields}|ConvertTo-Json -Depth 8) -TimeoutSec 10 | Out-Null; return $true } catch { Write-Host "[FIRESTORE ERROR] $assetId : $($_.Exception.Message)" -ForegroundColor Red; return $false }
+  try {
+    $body = (@{fields=$fields}|ConvertTo-Json -Depth 8)
+    Invoke-FirestoreRest -Uri $url -Method Patch -Body $body | Out-Null
+    return $true
+  } catch { Write-Host "[FIRESTORE ERROR] $assetId : $($_.Exception.Message)" -ForegroundColor Red; return $false }
 }
 
 function Send-Ntfy($asset,$title,$message,$priority='high') {
@@ -217,8 +251,12 @@ function Send-Ntfy($asset,$title,$message,$priority='high') {
   } catch {}
 }
 Write-Host "IT Asset LAN Monitor + Local AI aktif. Interval $Interval detik." -ForegroundColor Cyan
+Write-Host "MonitorStatus: ONLINE/OFFLINE dikirim ke Firestore tanpa bergantung pada status administratif." -ForegroundColor Green
+Write-Host "Pengecekan ICMP memakai System.Net.NetworkInformation.Ping (PowerShell 5.1 compatible)." -ForegroundColor Green
 Write-Host "AI lokal: $AIModel ($AIUrl)" -ForegroundColor Magenta
 Write-Host "Topic ntfy: $Topic" -ForegroundColor Yellow
+$FirebaseIdToken = Get-FirebaseIdToken
+if ($FirebaseIdToken) { Write-Host "Firestore Auth: Anonymous OK" -ForegroundColor Green } else { Write-Host "Firestore Auth: API Key/Public Rules mode" -ForegroundColor Yellow }
 while ($true) {
   $assets = Get-Assets
   Write-Host "[$(Get-Date -Format HH:mm:ss)] Aset terbaca: $($assets.Count)" -ForegroundColor DarkCyan
