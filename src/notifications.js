@@ -49,10 +49,11 @@ export async function registerNotificationServiceWorker() {
     updateViaCache: 'none'
   });
   await navigator.serviceWorker.ready;
+  // Force Chrome/Edge to check the newest background worker immediately.
+  try { await activeRegistration.update(); } catch (_) {}
   if (activeRegistration.waiting) {
     activeRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
   }
-  try { await activeRegistration.update(); } catch (_) {}
   return activeRegistration;
 }
 

@@ -36,6 +36,10 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
   for (const chunk of chunks) {
     const response = await getMessaging().sendEachForMulticast({
       tokens: chunk,
+      notification: {
+        title,
+        body
+      },
       data: {
         assetId: String(event.params.assetId),
         assetName: String(after.nama || after.name || after.assetName || 'Perangkat'),
@@ -45,7 +49,8 @@ exports.notifyMonitorStatus = onDocumentWritten('monitorStatus/{assetId}', async
         url: 'https://it-asset-management-diskominfo-batang.vercel.app/'
       },
       webpush: {
-        headers: { Urgency: trouble ? 'high' : 'normal' }
+        headers: { Urgency: trouble ? 'high' : 'normal' },
+        fcmOptions: { link: 'https://it-asset-management-diskominfo-batang.vercel.app/' }
       }
     });
 
