@@ -250,7 +250,8 @@ const EMPTY_FORM = {
   status: 'Aktif',
   keterangan: '',
   fotoUrl: '',
-  monitorUrl: ''
+  monitorUrl: '',
+  statusMode: 'realtime'
 };
 
 // ==========================================
@@ -1473,20 +1474,24 @@ function getMonitorCheckedAtMs(value) {
 }
 
 function getLiveAssetStatus(asset, monitorStates) {
+  // Mode manual tetap tersedia untuk kebutuhan administrasi aset.
+  // Mode realtime menjadi default agar status kartu/detail mengikuti hasil monitoring.
+  if ((asset?.statusMode || 'realtime') === 'manual') return asset.status || 'Aktif';
+
   const st = monitorStates?.[asset.id];
-  if (!st || typeof st.online !== 'boolean') return asset.status || 'Aktif';
+  if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
 
   // Firestore mengembalikan Timestamp object, bukan selalu string. Gunakan
   // toMillis()/seconds agar status benar-benar dianggap realtime.
   const checkedAt = getMonitorCheckedAtMs(st.checkedAt);
   const fresh = checkedAt > 0 && (Date.now() - checkedAt) <= 120000;
-  if (!fresh) return asset.status || 'Aktif';
+  if (!fresh) return 'Menunggu Monitoring';
 
   if (st.status === 'internet_trouble') return 'Internet Trouble';
   if (st.status === 'network_trouble') return 'Network Trouble';
   if (st.online === false || st.status === 'device_trouble' || st.status === 'trouble' || st.status === 'offline') return 'Trouble';
   if (st.online === true || st.status === 'online') return 'Aktif';
-  return asset.status || 'Aktif';
+  return 'Menunggu Monitoring';
 }
 
 function StatusChip({ status }) {
@@ -2347,22 +2352,42 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
             </select>
           </label>
 
-          <label className="formField">
-            <span className="fieldLabel">Status Operasional (Realtime)</span>
+          <div className="formField fullWidth">
+            <span className="fieldLabel">Mode Status Operasional</span>
             <select
-              value={editing ? getLiveAssetStatus(form, monitorStates) : form.status}
-              disabled={!!editing && !!monitorStates?.[form.id] && getLiveAssetStatus(form, monitorStates) !== (form.status || 'Aktif')}
+              value={form.statusMode || 'realtime'}
+              onChange={e => setForm({ ...form, statusMode: e.target.value })}
+            >
+              <option value="realtime">Realtime Monitoring — otomatis</option>
+              <option value="manual">Manual — gunakan status pilihan</option>
+            </select>
+            <span className="fieldHelper">Pilih Realtime agar sistem menentukan status berdasarkan kondisi perangkat. Pilih Manual jika status operasional ingin ditentukan admin.</span>
+          </div>
+
+          <label className="formField">
+            <span className="fieldLabel">Status Operasional</span>
+            <select
+              value={form.status || 'Aktif'}
+              disabled={(form.statusMode || 'realtime') !== 'manual'}
               onChange={e => setForm({ ...form, status: e.target.value })}
             >
-              {ALL_STATUS_FILTERS.map(s => (
+              {STATUSES.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
-              {!ALL_STATUS_FILTERS.includes(form.status || '') && <option value={form.status}>{form.status}</option>}
             </select>
-            {editing && monitorStates?.[form.id] && (
-              <span className="fieldHelper">Status ini dibaca otomatis dari monitoring LAN. Saat perangkat mati/tidak terjangkau, status berubah menjadi Trouble. Data status inventaris tetap tersimpan sebagai status administrasi.</span>
-            )}
+            <span className="fieldHelper">Status manual tersimpan untuk administrasi aset dan hanya digunakan sebagai status tampilan jika mode Manual dipilih.</span>
           </label>
+
+          <div className="formField">
+            <span className="fieldLabel">Status Realtime Saat Ini</span>
+            <div style={{minHeight:'42px',display:'flex',alignItems:'center',gap:'10px',padding:'0 12px',border:'1px solid var(--border-color, #e5e7eb)',borderRadius:'12px',background:'var(--surface-2, #f8fafc)'}}>
+              <StatusChip status={getLiveAssetStatus({ ...form, statusMode: 'realtime' }, monitorStates)} />
+              {monitorStates?.[form.id]?.checkedAt && (
+                <span className="fieldHelper" style={{margin:0}}>Pemeriksaan terakhir: {new Date(getMonitorCheckedAtMs(monitorStates[form.id].checkedAt)).toLocaleTimeString('id-ID')}</span>
+              )}
+            </div>
+            <span className="fieldHelper">Status ini tidak bisa dipilih. Nilainya mengikuti monitor agent secara otomatis.</span>
+          </div>
 
           {/* FOTO UPLOAD */}
           <div className="formField fullWidth">
