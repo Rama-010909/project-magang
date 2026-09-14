@@ -65,13 +65,14 @@ function Test-Target($asset) {
   if ([string]::IsNullOrWhiteSpace($target)) { return @{online=$false; latency=$null; method='none'; reason='Alamat monitoring kosong'} }
   $sw = [Diagnostics.Stopwatch]::StartNew()
   if ($target -match '^https?://') {
-    try { Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 6 | Out-Null; $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='URL merespons'} } catch { $sw.Stop(); return Test-InternetHealth $target }
+    try { Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 6 | Out-Null; $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='URL merespons'} } catch { $sw.Stop(); return @{online=$false; latency=$null; method='HTTP'; reason='Target URL tidak merespons'} }
   }
   $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':\d+$',''
-  if ($hostName -match '^\s*$') { return Test-InternetHealth $target }
+  if ($hostName -match '^\s*$') { return @{online=$false; latency=$null; method='none'; reason='Host target tidak valid'} }
 
-  # Untuk IP sumber internet/WAN, jangan menyimpulkan trouble hanya karena ping/port ditutup.
-  # Coba target terlebih dahulu, lalu gunakan pemeriksaan kesehatan internet sebagai fallback.
+  # Status aset HARUS ditentukan dari target aset itu sendiri.
+  # Jangan gunakan kesehatan internet PC monitor sebagai fallback, karena internet PC
+  # bisa tetap aktif ketika perangkat target sudah mati.
   try {
     $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -TimeoutSeconds 4 -ErrorAction SilentlyContinue
     if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason='IP sumber internet merespons ping'} }
@@ -84,7 +85,7 @@ function Test-Target($asset) {
       $client.Close()
     } catch {}
   }
-  return Test-InternetHealth $hostName
+  return @{online=$false; latency=$null; method='ICMP/TCP'; reason='Target tidak merespons ping maupun port monitoring'}
 }
 function Set-FirestoreStatus($assetId,$result,$consecutiveFail) {
   $url = "$ApiBase/monitorStatus/$assetId?updateMask.fieldPaths=online&updateMask.fieldPaths=latency&updateMask.fieldPaths=checkedAt&updateMask.fieldPaths=consecutiveFail&updateMask.fieldPaths=method&updateMask.fieldPaths=reason"

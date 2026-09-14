@@ -50,22 +50,7 @@ function showPushNotification(payload) {
   return self.registration.showNotification(title, options);
 }
 
-/*
- * Handle the raw Web Push event ourselves. This is deliberately independent
- * of the React page, so it also works while the installed PWA is closed.
- */
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  let payload = {};
-  try {
-    payload = event.data.json();
-  } catch (_) {
-    payload = { data: { body: event.data.text() } };
-  }
-
-  event.waitUntil(showPushNotification(payload));
-});
+/* Background notification payloads are handled by Firebase Messaging automatically. */
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
