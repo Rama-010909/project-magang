@@ -33,56 +33,37 @@ function Get-Assets {
     })
   } catch { @() }
 }
-function Test-InternetHealth($hostName) {
-  # Pemeriksaan koneksi internet secara nyata, bukan hanya ping IP WAN.
-  $sw = [Diagnostics.Stopwatch]::StartNew()
-  $checks = @(
-    @{url='https://www.google.com/generate_204'; name='Internet HTTPS'},
-    @{url='https://www.cloudflare.com/cdn-cgi/trace'; name='Internet Cloudflare'}
-  )
-  $passed = 0
-  foreach ($check in $checks) {
-    try {
-      Invoke-WebRequest -Uri $check.url -Method Head -UseBasicParsing -TimeoutSec 6 | Out-Null
-      $passed++
-    } catch {}
-  }
-  try {
-    Resolve-DnsName -Name 'dns.google' -Type A -Server 8.8.8.8 -ErrorAction Stop | Out-Null
-    $passed++
-  } catch {}
-  $sw.Stop()
-  if ($passed -ge 2) {
-    return @{online=$true; latency=$sw.ElapsedMilliseconds; method='InternetHealth'; reason='Koneksi internet terdeteksi normal'}
-  }
-  return @{online=$false; latency=$null; method='InternetHealth'; reason='Koneksi internet gagal atau tidak stabil'}
-}
 function Test-Target($asset) {
   $target = [string]$asset.monitorUrl
   if ([string]::IsNullOrWhiteSpace($target)) { $target = [string]$asset.ipAddress }
   if ([string]::IsNullOrWhiteSpace($target)) { return @{online=$false; latency=$null; method='none'; reason='Alamat monitoring kosong'} }
   $sw = [Diagnostics.Stopwatch]::StartNew()
   if ($target -match '^https?://') {
-    try { Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 6 | Out-Null; $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='URL merespons'} } catch { $sw.Stop(); return Test-InternetHealth $target }
+    try { Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 4 | Out-Null; $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='HTTP merespons'} } catch { $sw.Stop(); return @{online=$false; latency=$null; method='HTTP'; reason='Tidak merespons HTTP'} }
   }
-  $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':d+$',''
-  if ($hostName -match '^\s*$') { return Test-InternetHealth $target }
-
-  # Untuk IP sumber internet/WAN, jangan menyimpulkan trouble hanya karena ping/port ditutup.
-  # Coba target terlebih dahulu, lalu gunakan pemeriksaan kesehatan internet sebagai fallback.
+  $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':\d+$',''
+  if ($hostName -match '^\s*$') { $sw.Stop(); return @{online=$false; latency=$null; method='invalid'; reason='IP/hostname tidak valid'} }
+  # Coba layanan web umum terlebih dahulu; banyak router memblokir ICMP tetapi tetap membuka HTTP/HTTPS.
+  foreach ($scheme in @('http','https')) {
+    try {
+      $webUrl = "$scheme://$hostName"
+      Invoke-WebRequest -Uri $webUrl -Method Head -UseBasicParsing -TimeoutSec 4 | Out-Null
+      $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method="$scheme"; reason="$scheme merespons"}
+    } catch {}
+  }
   try {
-    $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -TimeoutSeconds 4 -ErrorAction SilentlyContinue
-    if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason='IP sumber internet merespons ping'} }
+    $ok = Test-Connection -ComputerName $hostName -Count 1 -Quiet -ErrorAction SilentlyContinue
+    if ($ok) { $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='ICMP'; reason='Ping berhasil'} }
   } catch {}
-  foreach ($port in @(443,80,8291,8728,8729)) {
+  foreach ($port in @($config.ports)) {
     try {
       $client = New-Object Net.Sockets.TcpClient
       $task = $client.ConnectAsync($hostName,[int]$port)
-      if ($task.Wait(1800) -and $client.Connected) { $client.Close(); $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method="TCP:$port"; reason="Port $port merespons"} }
+      if ($task.Wait(1200) -and $client.Connected) { $client.Close(); $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method="TCP:$port"; reason="Port $port merespons"} }
       $client.Close()
     } catch {}
   }
-  return Test-InternetHealth $hostName
+  $sw.Stop(); return @{online=$false; latency=$null; method='ICMP/TCP'; reason='Ping dan port umum tidak merespons'}
 }
 function Set-FirestoreStatus($assetId,$result,$consecutiveFail) {
   $url = "$ApiBase/monitorStatus/$assetId?updateMask.fieldPaths=online&updateMask.fieldPaths=latency&updateMask.fieldPaths=checkedAt&updateMask.fieldPaths=consecutiveFail&updateMask.fieldPaths=method&updateMask.fieldPaths=reason"
