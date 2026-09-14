@@ -24,3 +24,6 @@ firebase deploy --only functions
 ```
 
 Pastikan Firebase CLI sudah login dan project Firebase yang digunakan sudah dipilih. PWA tetap dipasang dari website Vercel melalui menu **Tambahkan ke layar utama**. Agent monitoring tetap dijalankan pada komputer yang memiliki akses ke jaringan target.
+
+## Cloud Monitoring Serius
+Lihat `README-CLOUD-SERIOUS.md`. Cloud monitor dapat berjalan tanpa Windows/Android yang selalu hidup untuk target yang benar-benar dapat dijangkau dari internet.

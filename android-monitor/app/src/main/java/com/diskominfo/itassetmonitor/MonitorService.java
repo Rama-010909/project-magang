@@ -1,0 +1,22 @@
+package com.diskominfo.itassetmonitor;
+
+import android.app.*;import android.content.*;import android.os.*;import java.io.*;import java.net.*;import java.nio.charset.StandardCharsets;import java.text.*;import java.util.*;import org.json.*;
+
+public class MonitorService extends Service {
+  static final String PROJECT="it-asset-diskominfo-batang";
+  static final String BASE="https://firestore.googleapis.com/v1/projects/"+PROJECT+"/databases/(default)/documents";
+  Handler h=new Handler(Looper.getMainLooper()); Runnable loop;
+  @Override public void onCreate(){super.onCreate(); createChannel(); startForeground(7,notification("Monitoring aktif")); loop=()->{new Thread(this::check).start();h.postDelayed(loop,30000);};h.post(loop);}
+  void createChannel(){if(Build.VERSION.SDK_INT>=26){NotificationChannel c=new NotificationChannel("monitor","IT Asset Monitor",NotificationManager.IMPORTANCE_LOW);getSystemService(NotificationManager.class).createNotificationChannel(c);}}
+  Notification notification(String s){return new Notification.Builder(this,"monitor").setContentTitle("IT Asset Monitor").setContentText(s).setSmallIcon(android.R.drawable.stat_notify_sync).setOngoing(true).build();}
+  void check(){try{String raw=get(BASE+"/assets?pageSize=1000"); JSONObject root=new JSONObject(raw); JSONArray docs=root.optJSONArray("documents");if(docs==null)return;int online=0;for(int i=0;i<docs.length();i++){JSONObject d=docs.getJSONObject(i);String id=d.optString("name").substring(d.optString("name").lastIndexOf('/')+1);JSONObject f=d.optJSONObject("fields");String code=str(f,"kodeAset");if(code.isEmpty())code=id;String ip=str(f,"ipAddress");String url=str(f,"monitorUrl");boolean ok=probe(url,ip);if(ok)online++;write(code,id,ok,url); }updateNote("Monitoring aktif • Online: "+online+" • "+new SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(new Date()));}catch(Exception e){updateNote("Monitoring • koneksi Firestore bermasalah");}}
+  String str(JSONObject f,String k){if(f==null)return "";JSONObject x=f.optJSONObject(k);return x==null?"":x.optString("stringValue","");}
+  boolean probe(String url,String ip){try{if(!url.isEmpty()){URL u=new URL(url);HttpURLConnection c=(HttpURLConnection)u.openConnection();c.setConnectTimeout(2500);c.setReadTimeout(2500);c.setRequestMethod("HEAD");return c.getResponseCode()>0;}if(ip.isEmpty())return false;for(int p:new int[]{80,443,22,8291}){try(Socket s=new Socket()){s.connect(new InetSocketAddress(ip,p),900);return true;}catch(Exception ignored){}}return InetAddress.getByName(ip).isReachable(1200);}catch(Exception e){return false;}}
+  void write(String code,String id,boolean online,String url)throws Exception{String doc=code.isEmpty()?id:code;String body="{\"fields\":{\"kodeAset\":{\"stringValue\":\""+esc(code)+"\"},\"assetId\":{\"stringValue\":\""+esc(id)+"\"},\"online\":{\"booleanValue\":"+online+"},\"deviceStatus\":{\"stringValue\":\""+(online?"aktif":"mati/tidak terjangkau")+"\"},\"internetStatus\":{\"stringValue\":\"Belum Diperiksa\"},\"checkedAt\":{\"timestampValue\":\""+new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX",Locale.US).format(new Date())+"\"}}}";patch(BASE+"/monitorStatus/"+URLEncoder.encode(doc,StandardCharsets.UTF_8.toString()),body);}
+  String esc(String s){return s.replace("\\","\\\\").replace("\"","\\\"");}
+  String get(String u)throws Exception{return request(u,"GET",null);}
+  void patch(String u,String b)throws Exception{request(u,"PATCH",b);}
+  String request(String u,String method,String body)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(u).openConnection();c.setConnectTimeout(5000);c.setReadTimeout(5000);c.setRequestMethod(method);c.setRequestProperty("Content-Type","application/json");if(body!=null){c.setDoOutput(true);try(OutputStream o=c.getOutputStream()){o.write(body.getBytes(StandardCharsets.UTF_8));}}int r=c.getResponseCode();InputStream in=r>=400?c.getErrorStream():c.getInputStream();String s="";if(in!=null){try(BufferedReader br=new BufferedReader(new InputStreamReader(in))){String x;StringBuilder z=new StringBuilder();while((x=br.readLine())!=null)z.append(x);s=z.toString();}}if(r>=400)throw new IOException("HTTP "+r+" "+s);return s;}
+  void updateNote(String s){h.post(()->{NotificationManager m=getSystemService(NotificationManager.class);m.notify(7,notification(s));});}
+  @Override public int onStartCommand(Intent i,int f,int id){return START_STICKY;} @Override public IBinder onBind(Intent i){return null;} @Override public void onDestroy(){if(loop!=null)h.removeCallbacks(loop);super.onDestroy();}
+}

@@ -1,0 +1,88 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A100000000000001 /* ITAssetMonitorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000001 /* ITAssetMonitorApp.swift */; };
+		A100000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000002 /* ContentView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B100000000000001 /* ITAssetMonitorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITAssetMonitorApp.swift; sourceTree = "<group>"; };
+		B100000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B100000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B100000000000004 /* ITAssetMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ITAssetMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C100000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		D100000000000001 /* ITAssetMonitor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E100000000000002;
+			buildPhases = (C100000000000002, C100000000000001, C100000000000003);
+			buildRules = ();
+			dependencies = ();
+			name = ITAssetMonitor;
+			productName = ITAssetMonitor;
+			productReference = B100000000000004;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F100000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = { LastUpgradeCheck = 1600; };
+			buildConfigurationList = E100000000000001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = F100000000000002;
+			productRefGroup = F100000000000003;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (D100000000000001);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C100000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C100000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A100000000000001, A100000000000002); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXGroup section */
+		F100000000000002 = {
+			isa = PBXGroup;
+			children = (F100000000000004, F100000000000005, F100000000000006);
+			sourceTree = "<group>";
+		};
+		F100000000000003 = {isa = PBXGroup; children = (B100000000000004); name = Products; sourceTree = "<group>"; };
+		F100000000000004 = {isa = PBXGroup; children = (B100000000000001, B100000000000002); path = ITAssetMonitor; sourceTree = "<group>"; };
+		F100000000000005 = {isa = PBXGroup; children = (B100000000000003); path = ITAssetMonitor; sourceTree = "<group>"; };
+		F100000000000006 = {isa = PBXGroup; children = (); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin XCBuildConfiguration section */
+		G100000000000001 = {isa = XCBuildConfiguration; buildSettings = { PRODUCT_BUNDLE_IDENTIFIER = com.diskominfo.itassetmonitor; SWIFT_VERSION = 5.0; INFOPLIST_FILE = ITAssetMonitor/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		G100000000000002 = {isa = XCBuildConfiguration; buildSettings = { PRODUCT_BUNDLE_IDENTIFIER = com.diskominfo.itassetmonitor; SWIFT_VERSION = 5.0; INFOPLIST_FILE = ITAssetMonitor/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		H100000000000001 = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; }; name = Debug; };
+		H100000000000002 = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E100000000000001 = {isa = XCConfigurationList; buildConfigurations = (H100000000000001, H100000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		E100000000000002 = {isa = XCConfigurationList; buildConfigurations = (G100000000000001, G100000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = F100000000000001;
+}
