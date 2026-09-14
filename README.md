@@ -9,3 +9,18 @@ Catatan penting: agent harus berada pada jaringan yang dapat menjangkau IP targe
 
 ## Auto monitoring
 Lihat `README-AUTO-MONITORING.md` dan `auto-discovery-config.example.json` untuk konfigurasi deteksi perangkat otomatis dari MikroTik.
+
+## Satu aplikasi + notifikasi HP
+
+Project ini sudah menyertakan Firebase Cloud Function pada folder `functions/` untuk mengirim notifikasi FCM ketika dokumen `monitorStatus/{assetId}` berubah status. Setelah login di HP, tekan tombol aktifkan notifikasi pada aplikasi dan izinkan notifikasi.
+
+Deploy function dari folder project:
+
+```bash
+cd functions
+npm install
+cd ..
+firebase deploy --only functions
+```
+
+Pastikan Firebase CLI sudah login dan project Firebase yang digunakan sudah dipilih. PWA tetap dipasang dari website Vercel melalui menu **Tambahkan ke layar utama**. Agent monitoring tetap dijalankan pada komputer yang memiliki akses ke jaringan target.

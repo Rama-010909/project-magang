@@ -2,6 +2,8 @@
 # Run this script on a Windows PC that stays on inside the same LAN.
 $ErrorActionPreference = 'SilentlyContinue'
 $ProjectId = 'it-asset-diskominfo-batang'
+# Notifikasi HP memakai ntfy karena pengiriman FCM memerlukan backend/service-account.
+# Instal aplikasi ntfy di HP lalu subscribe ke topic yang tercetak saat agent pertama kali dijalankan.
 $ConfigPath = Join-Path $PSScriptRoot 'monitor-agent-config.json'
 $ApiBase = "https://firestore.googleapis.com/v1/projects/$ProjectId/databases/(default)/documents"
 
@@ -65,7 +67,7 @@ function Test-Target($asset) {
   if ($target -match '^https?://') {
     try { Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 6 | Out-Null; $sw.Stop(); return @{online=$true; latency=$sw.ElapsedMilliseconds; method='HTTP'; reason='URL merespons'} } catch { $sw.Stop(); return Test-InternetHealth $target }
   }
-  $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':d+$',''
+  $hostName = $target -replace '^https?://','' -replace '/.*$','' -replace ':\d+$',''
   if ($hostName -match '^\s*$') { return Test-InternetHealth $target }
 
   # Untuk IP sumber internet/WAN, jangan menyimpulkan trouble hanya karena ping/port ditutup.
@@ -106,10 +108,10 @@ while ($true) {
     $fails = if ($result.online) { 0 } else { [int](if($old){$old.fails}else{0}) + 1 }
     Set-FirestoreStatus $asset.id $result $fails
     if (!$result.online -and $fails -eq $Threshold) {
-      Send-Ntfy $asset '⚠️ Aset Trouble' "$($asset.nama) ($($asset.kodeAset)) tidak merespons. Lokasi: $($asset.lokasi). Pemeriksaan: $($result.method)."
+      Send-Ntfy $asset 'Aset Trouble' "$($asset.nama) ($($asset.kodeAset)) tidak merespons. Lokasi: $($asset.lokasi). Pemeriksaan: $($result.method)."
     }
     if ($result.online -and $old -and $old.fails -ge $Threshold -and $config.notifyRecovery) {
-      Send-Ntfy $asset '✅ Aset Kembali Online' "$($asset.nama) ($($asset.kodeAset)) kembali merespons. Pemeriksaan: $($result.method)." 'default'
+      Send-Ntfy $asset 'Aset Kembali Online' "$($asset.nama) ($($asset.kodeAset)) kembali merespons. Pemeriksaan: $($result.method)." 'default'
     }
     $States[$asset.id] = @{fails=$fails; online=$result.online}
     
