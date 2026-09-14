@@ -627,7 +627,24 @@ function App() {
     const unsub = onSnapshot(collection(db, 'monitorStatus'), snapshot => {
       const rows = {};
       snapshot.docs.forEach(d => { rows[d.id] = { id: d.id, ...d.data(), source: 'agent' }; });
+      const previous = monitorStatesRef.current || {};
       setAgentMonitorStates(rows);
+      setMonitorStates(rows);
+
+      // Notifikasi realtime: hanya kirim ketika status agent benar-benar berubah
+      // Online -> Offline / Offline -> Online. Snapshot awal tidak memicu notifikasi.
+      if (Object.keys(previous).length) {
+        Object.values(rows).forEach(st => {
+          const before = previous[st.id];
+          if (!before || typeof before.online !== 'boolean' || typeof st.online !== 'boolean') return;
+          const asset = window.__assetRows?.find(a => a.id === st.id);
+          if (!asset || !notificationEnabledRef.current || !notificationTroubleRef.current) return;
+          if (before.online === true && st.online === false) {
+            showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline', aiReason: st.diagnosis || st.reason || 'Perangkat tidak merespons agent LAN' } });
+          }
+        });
+      }
+      monitorStatesRef.current = rows;
     }, err => console.warn('Monitor agent status:', err));
     return () => unsub();
   }, [login]);
@@ -798,6 +815,7 @@ function App() {
             }
             window.__assetNotificationSnapshot = new Map(rows.map(a => [a.id, a]));
 
+            window.__assetRows = rows;
             setAssets(rows);
             setIsFirebaseConnected(true);
             setFirebaseChecked(true);
@@ -878,11 +896,7 @@ function App() {
     monitorStatesRef.current = monitorStates;
   }, [monitorStates]);
 
-  // FIX8: browser-side ping dimatikan.
-  // Agent LAN adalah satu-satunya sumber status perangkat agar hasil tidak konflik
-  // (browser HTTPS -> IP LAN dapat gagal karena mixed-content/CORS lalu memicu
-  // notifikasi OFFLINE palsu walaupun perangkat sebenarnya ONLINE).
-
+  // FIX9: status perangkat hanya dari monitorStatus Firestore yang ditulis agent LAN.
   const monitorAlertsCount = assets.filter(a => agentMonitorStates[a.id]?.online === false).length;
 
   const filteredAssets = useMemo(() => {
@@ -1207,7 +1221,7 @@ function App() {
             assets={assets}
             maint={maint}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={{}}
+            browserMonitorStates={monitorStates}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint) })).filter(x => x.trouble).sort((a,b) => b.score-a.score).slice(0,5)}
             setSelected={a => {
               setSelected(a);
@@ -1235,7 +1249,7 @@ function App() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={{}}
+            browserMonitorStates={monitorStates}
             openEdit={openEdit}
             removeAsset={removeAsset}
             onOpenDetail={a => {
@@ -1252,7 +1266,7 @@ function App() {
             setForm={setForm}
             saveAsset={saveAsset}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={{}}
+            browserMonitorStates={monitorStates}
             loading={loading}
             editing={editing}
             cancel={() => go('inventaris')}
@@ -1262,7 +1276,7 @@ function App() {
         {page === 'monitor' && (
           <MonitoringView
             assets={assets}
-            monitorStates={agentMonitorStates}
+            monitorStates={{ ...monitorStates, ...agentMonitorStates }}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: agentMonitorStates[a.id] || monitorStates[a.id] })).filter(x => x.trouble || x.monitor?.online === false)}
             go={go}
           />
@@ -1294,7 +1308,7 @@ function App() {
           <DetailModal
             asset={selected}
             monitorStates={agentMonitorStates}
-            browserMonitorStates={{}}
+            browserMonitorStates={monitorStates}
             maintList={maint.filter(m => m.assetId === selected.id)}
             closeModal={() => {
               setSelected(null);
@@ -1467,38 +1481,18 @@ function getMonitorCheckedAtMs(value) {
 }
 
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
-  // STATUS PERANGKAT REALTIME hanya menjawab: Online atau Offline.
-  // Status administratif dan kondisi internet sengaja tidak ikut menentukan hasil ini.
-  const agent = agentStates?.[asset.id];
-  const browser = browserStates?.[asset.id];
-  const agentMs = getMonitorCheckedAtMs(agent?.checkedAt);
-  const browserMs = getMonitorCheckedAtMs(browser?.checkedAt);
-  const now = Date.now();
-  const agentValid = !!agent && typeof agent.online === 'boolean';
-  const browserFresh = !!browser && typeof browser.online === 'boolean' && browserMs > 0 && (now - browserMs) <= 90000;
-  // Agent LAN adalah sumber utama. Jika agent sudah mengirim record dengan nilai online
-  // boolean, gunakan hasil tersebut walaupun timestamp tidak terbaca oleh SDK. Timestamp
-  // hanya dipakai untuk informasi kesegaran, bukan untuk mengubah Online menjadi Menunggu.
-  const st = agentValid ? agent : (browserFresh && browser?.online === true ? browser : null);
-  if (!st) return 'Menunggu Monitoring';
-  if (st.online === true) return 'Online';
-  return 'Offline';
+  // FIX9: hanya monitorStatus dari agent LAN yang menentukan Online/Offline.
+  // Browser ping dan status administratif tidak pernah dipakai.
+  const st = agentStates?.[asset.id];
+  if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
+  return st.online ? 'Online' : 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
-  // STATUS INTERNET berdiri sendiri. Perangkat bisa Online meskipun internet Trouble.
-  const agent = agentStates?.[asset.id];
-  const browser = browserStates?.[asset.id];
-  const agentMs = getMonitorCheckedAtMs(agent?.checkedAt);
-  const browserMs = getMonitorCheckedAtMs(browser?.checkedAt);
-  const now = Date.now();
-  const agentFresh = !!agent && agentMs > 0 && (now - agentMs) <= 180000;
-  const browserFresh = !!browser && browserMs > 0 && (now - browserMs) <= 90000;
-  const st = agentFresh ? agent : (browserFresh ? browser : null);
+  const st = agentStates?.[asset.id];
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
-  if (value === 'trouble' || st.status === 'internet_trouble') return 'Internet Trouble';
-  if (st.internetOnline === false) return 'Internet Trouble';
+  if (value === 'trouble' || st.status === 'internet_trouble' || st.internetOnline === false) return 'Internet Trouble';
   if (st.internetOnline === true || value === 'normal' || value === 'online' || value === 'ok') return 'Normal';
   return 'Belum Diperiksa';
 }
@@ -1839,7 +1833,7 @@ function DashboardView({ counts, realtimeCounts, assets, maint, monitorStates, b
                     </span>
                   </div>
                 </div>
-                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, monitorStates, {})} /></div>
+                <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
               </div>
             ))}
 
@@ -2008,7 +2002,7 @@ function InventoryView({
                 )}
                 <div className="cardTopBadges">
                   <span className="categoryBadge">{a.kategori}</span>
-                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, monitorStates, {})} /></div>
+                  <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
                 </div>
               </div>
 
@@ -2146,7 +2140,7 @@ function InventoryView({
                       <ConditionChip condition={a.kondisi} />
                     </td>
                     <td>
-                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, {})} /><InternetChip status={getLiveInternetStatus(a, monitorStates, {})} /></div>
+                      <div className="statusPair"><StatusChip status={getLiveAssetStatus(a, monitorStates, browserMonitorStates)} /><InternetChip status={getLiveInternetStatus(a, monitorStates, browserMonitorStates)} /></div>
                     </td>
                     <td className="textRight">
                       <div className="tableActionBtns">

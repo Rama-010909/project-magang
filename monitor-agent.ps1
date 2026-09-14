@@ -42,14 +42,14 @@ if (Test-Path $EmbeddedAI) { . $EmbeddedAI }
 
 if (!(Test-Path $ConfigPath) -or [string]::IsNullOrWhiteSpace(([string]((Get-Content $ConfigPath -Raw | ConvertFrom-Json).topic))) ) {
   $topic = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 28 | ForEach-Object {[char]$_})
-  @{ topic=$topic; intervalSeconds=30; failThreshold=1; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+  @{ topic=$topic; intervalSeconds=30; failThreshold=2; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
   Write-Host "Config dibuat. TOPIC NOTIFIKASI: $topic" -ForegroundColor Green
   Write-Host "Simpan topic ini dan subscribe di aplikasi ntfy." -ForegroundColor Yellow
 }
 $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 $Topic = [string]$config.topic
 $Interval = [int]$config.intervalSeconds
-$Threshold = 1  # FIX8: satu hasil gagal = OFFLINE, supaya tidak tertahan ONLINE 30-60 detik
+$Threshold = [int]$config.failThreshold
 $States = @{}
 $LastAssetRefresh = Get-Date '2000-01-01'
 
@@ -229,28 +229,10 @@ Confidence 0-100. Jika data tidak cukup membedakan penyebab, katakan bahwa penye
   }
 }
 
-function Set-FirestoreStatus(
-  [string]$assetId,
-  $device,
-  $internet,
-  $ai,
-  [int]$consecutiveFail,
-  [int]$consecutiveTrouble,
-  $asset
-) {
-  # Document ID monitor harus sama persis dengan document ID pada assets.
-  if ([string]::IsNullOrWhiteSpace($assetId)) {
-    Write-Host "[FIRESTORE WRITE SKIP] Asset ID kosong. MonitorStatus tidak ditulis." -ForegroundColor Red
-    return $false
-  }
-
+function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$consecutiveTrouble,$asset) {
   $paths=@('online','status','state','deviceStatus','internetOnline','internetStatus','latency','checkedAt','consecutiveFail','consecutiveTrouble','method','reason','diagnosis','confidence','nama','kodeAset','lokasi','ipAddress')
-  $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$_" }) -join '&'
-  $encodedAssetId=[System.Uri]::EscapeDataString($assetId)
-  $url = "$ApiBase/monitorStatus/$encodedAssetId" + "?" + $mask
-
-  Write-Host "[MONITOR WRITE] assetId='$assetId' -> monitorStatus/$assetId" -ForegroundColor DarkGray
-
+  $mask=($paths | ForEach-Object { "updateMask.fieldPaths=$($_)" }) -join '&'
+  $url="$ApiBase/monitorStatus/$assetId?$mask"
   $fields=@{
     online=@{booleanValue=[bool]$device.online}; status=@{stringValue=[string]$ai.status}; state=@{stringValue=[string]$ai.status};
     deviceStatus=@{stringValue=[string]$ai.deviceStatus}; internetOnline=@{booleanValue=[bool]$internet.online}; internetStatus=@{stringValue=[string]$ai.internetStatus};
@@ -285,31 +267,22 @@ while ($true) {
     if ([string]::IsNullOrWhiteSpace($asset.monitorUrl) -and [string]::IsNullOrWhiteSpace($asset.ipAddress)) { continue }
     $old = $States[$asset.id]
     $device = Test-Target $asset
-    # FIX8: tidak ada grace period. Satu hasil gagal dari agent langsung menjadi OFFLINE.
+    # FIX9: hasil agent adalah sumber kebenaran. Tidak ada grace period dan tidak ada
+    # override dari AI/status administratif. Jika pemeriksaan kali ini gagal, kirim offline.
     $consecutiveFail = if ($device.online) { 0 } else { [int](if($old){$old.consecutiveFail}else{0}) + 1 }
-    if (-not $device.online -and $old -and $old.online -eq $true -and $consecutiveFail -lt $Threshold) {
-      $device.online = $true
-      $device.reason = "Pemeriksaan kali ini timeout, tetapi belum mencapai batas $Threshold kali gagal berturut-turut."
-    }
     $internet = Get-InternetHealth
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
     $troubleNow = ($ai.status -ne 'online')
     $consecutiveTrouble = if ($troubleNow) { [int](if($old){$old.consecutiveTrouble}else{0}) + 1 } else { 0 }
-    $writeOk = Set-FirestoreStatus `
-      -assetId ([string]$asset.id) `
-      -device $device `
-      -internet $internet `
-      -ai $ai `
-      -consecutiveFail $consecutiveFail `
-      -consecutiveTrouble $consecutiveTrouble `
-      -asset $asset
+    $writeOk = Set-FirestoreStatus $asset.id $device $internet $ai $consecutiveFail $consecutiveTrouble $asset
     if (-not $writeOk) { Write-Host "[STATUS TIDAK TERKIRIM] $($asset.nama)" -ForegroundColor Red }
 
-    if (-not $device.online -and $old -and $old.online -eq $true) {
-      Send-Ntfy $asset 'Peringatan Gangguan Aset' "$($asset.nama) ($($asset.kodeAset)): $($ai.diagnosis) Keterangan: $($ai.reason)"
+    $previousOnline = if($old -and $old.ContainsKey('online')) { [bool]$old.online } else { $null }
+    if ($previousOnline -eq $true -and $device.online -eq $false) {
+      Send-Ntfy $asset 'Peringatan Perangkat Offline' "$($asset.nama) ($($asset.kodeAset)) terdeteksi OFFLINE. $($device.reason)"
     }
-    if ($device.online -and $old -and $old.online -eq $false -and $config.notifyRecovery) {
-      Send-Ntfy $asset 'Aset Kembali Aman' "$($asset.nama) ($($asset.kodeAset)) kembali aman. $($ai.diagnosis)" 'default'
+    if ($previousOnline -eq $false -and $device.online -eq $true -and $config.notifyRecovery) {
+      Send-Ntfy $asset 'Aset Kembali Online' "$($asset.nama) ($($asset.kodeAset)) kembali ONLINE. $($device.reason)" 'default'
     }
     $States[$asset.id] = @{consecutiveFail=$consecutiveFail; consecutiveTrouble=$consecutiveTrouble; online=$device.online; status=$ai.status}
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $($asset.nama) -> $($ai.status.ToUpper()) | Perangkat: $($ai.deviceStatus) | Internet: $($ai.internetStatus) | $($ai.diagnosis)"
