@@ -166,6 +166,23 @@ async function notifyChange(fcmAccessToken, tokens, asset, previous, online, pro
   return sent;
 }
 
+
+async function notifyInternetChange(fcmAccessToken, tokens, asset, previous, internetOnline, probe) {
+  if (!fcmAccessToken || !tokens.length || !previous || typeof previous.internetOnline !== 'boolean' || previous.internetOnline === internetOnline) return 0;
+  const type = internetOnline ? 'internet_recovery' : 'internet_trouble';
+  const title = internetOnline ? 'Internet Kembali Normal' : 'Peringatan Internet Trouble';
+  const name = asset.nama || asset.name || 'Perangkat';
+  const code = asset.kodeAset || asset.id || '';
+  const body = `${name} • ${code} • ${internetOnline ? 'Internet kembali normal' : 'Internet bermasalah'}${probe?.reason ? ` • ${probe.reason}` : ''}`;
+  let sent = 0; const stale = [];
+  await Promise.all(tokens.map(async item => {
+    try { await sendFcm(fcmAccessToken, item.token, { title, body, assetId: asset.id, type }); sent++; }
+    catch (e) { const msg=String(e.message||e); if(/UNREGISTERED|registration-token-not-registered|INVALID_ARGUMENT/i.test(msg)) stale.push(item.id); console.warn(`[FCM] gagal internet ${item.platform||'device'} ${item.id}: ${msg}`); }
+  }));
+  for (const id of stale) { try { await firestoreFetch(`notificationTokens/${encodeURIComponent(id)}`, fcmFirestoreToken, { method:'DELETE' }); } catch (_) {} }
+  return sent;
+}
+
 let fcmFirestoreToken = null;
 
 async function getNotificationState(assetId, token) {
@@ -175,8 +192,10 @@ async function getNotificationState(assetId, token) {
   } catch (_) { return null; }
 }
 
-async function setNotificationState(assetId, online, token) {
-  const body = { fields: { online: toValue(!!online), updatedAt: toValue(new Date()) } };
+async function setNotificationState(assetId, online, internetOnline, token) {
+  const fields = { online: toValue(!!online), updatedAt: toValue(new Date()) };
+  if (typeof internetOnline === 'boolean') fields.internetOnline = toValue(internetOnline);
+  const body = { fields };
   try {
     await firestoreFetch(`notificationState/${encodeURIComponent(assetId)}`, token, { method: 'PATCH', body: JSON.stringify(body) });
   } catch (e) {
@@ -219,18 +238,21 @@ async function main() {
           const currentState = parseFields(current.fields || {});
           if (fcmAccessToken && tokens.length && typeof currentState.online === 'boolean') {
             const ns = await getNotificationState(asset.id, token);
+            let notified = 0;
             if (ns && typeof ns.online === 'boolean' && ns.online !== currentState.online) {
-              const type = currentState.online ? 'recovery' : 'offline';
-              const title = currentState.online ? 'Perangkat Kembali Online' : 'Peringatan Perangkat Offline';
-              const name = asset.nama || asset.name || currentState.nama || 'Perangkat';
-              const code = asset.kodeAset || asset.id;
-              const body = `${name} • ${code} • ${currentState.online ? 'Online kembali' : 'Offline'}${currentState.reason ? ` • ${currentState.reason}` : ''}`;
-              await notifyChange(fcmAccessToken, tokens, asset, ns, currentState.online, { reason: currentState.reason || '' });
-              await setNotificationState(asset.id, currentState.online, token);
-              results.push({ assetId: asset.id, online: !!currentState.online, notified: 1, source: 'lan-agent' });
-              return;
+              notified += await notifyChange(fcmAccessToken, tokens, asset, ns, currentState.online, { reason: currentState.reason || '' });
             }
-            if (!ns || typeof ns.online !== 'boolean') await setNotificationState(asset.id, currentState.online, token);
+            if (ns && typeof currentState.internetOnline === 'boolean' && typeof ns.internetOnline === 'boolean' && ns.internetOnline !== currentState.internetOnline) {
+              notified += await notifyInternetChange(fcmAccessToken, tokens, asset, ns, currentState.internetOnline, { reason: currentState.internetReason || currentState.reason || '' });
+            }
+            if (!ns || typeof ns.online !== 'boolean' || (typeof currentState.internetOnline === 'boolean' && typeof ns.internetOnline !== 'boolean')) {
+              await setNotificationState(asset.id, currentState.online, typeof currentState.internetOnline === 'boolean' ? currentState.internetOnline : undefined, token);
+            } else if (notified) {
+              await setNotificationState(asset.id, currentState.online, typeof currentState.internetOnline === 'boolean' ? currentState.internetOnline : ns.internetOnline, token);
+            }
+            results.push({ assetId: asset.id, online: !!currentState.online, notified, source: 'lan-agent' });
+          } else {
+            results.push({ assetId: asset.id, online: !!currentState.online, notified: 0, source: 'lan-agent' });
           }
           results.push({ assetId: asset.id, online: !!currentState.online, notified: 0, source: 'lan-agent' });
         } catch (_) {
@@ -249,7 +271,7 @@ async function main() {
           online: toValue(!!probe.online),
           status: toValue(probe.online ? 'online' : 'offline'),
           deviceStatus: toValue(probe.online ? 'Online' : 'Offline'),
-          internetStatus: toValue(probe.online ? 'Normal' : 'Internet Trouble'),
+          internetStatus: toValue(probe.online ? 'Normal' : 'Belum Diperiksa'),
           reason: toValue(String(probe.reason || '')),
           method: toValue(String(probe.method || '')),
           latency: toValue(Number(probe.latency || 0)),
@@ -263,7 +285,7 @@ async function main() {
       if (fcmAccessToken && tokens.length && previous && typeof previous.online === 'boolean' && previous.online !== !!probe.online) {
         notified = await notifyChange(fcmAccessToken, tokens, asset, previous, !!probe.online, probe);
       }
-      await setNotificationState(asset.id, !!probe.online, token);
+      await setNotificationState(asset.id, !!probe.online, undefined, token);
       results.push({ assetId: asset.id, online: !!probe.online, notified, reason: probe.reason, source: 'cloud' });
     }));
   }

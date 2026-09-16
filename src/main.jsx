@@ -638,6 +638,14 @@ function App() {
         const n = Date.parse(String(value));
         return Number.isFinite(n) ? n : 0;
       };
+      snapshot.docChanges().forEach(change => {
+        if (change.type !== 'modified') return;
+        const after = change.doc.data() || {};
+        const before = change.doc.data() || {};
+        // Firestore docChanges does not expose the old document. The notification
+        // effect below compares the normalized monitor state, so changes are
+        // handled there without firing on the initial snapshot.
+      });
       snapshot.docs.forEach(d => {
         const data = d.data() || {};
         const row = { id: d.id, ...data, source: 'agent' };
@@ -667,12 +675,12 @@ function App() {
     const running = new Set();
 
     const run = async () => {
-      const candidates = assets.filter(a => a?.ipAddress || a?.monitorUrl || a?.internetIp || a?.publicIp || a?.ipPublic || a?.ipInternet).slice(0, 80);
+      const candidates = assets.filter(a => a?.ipAddress || a?.monitorUrl).slice(0, 80);
       for (const asset of candidates) {
         const key = String(asset.kodeAset || asset.id || '');
         if (!key || running.has(key)) continue;
         // Private IPs are probed locally. Public targets remain the cloud monitor's job.
-        if (asset.ipAddress && !isPrivateIPv4(asset.ipAddress) && !asset.monitorUrl && !asset.internetIp && !asset.publicIp && !asset.ipPublic && !asset.ipInternet) continue;
+        if (asset.ipAddress && !isPrivateIPv4(asset.ipAddress) && !asset.monitorUrl) continue;
         running.add(key);
         probeAssetFromBrowser(asset).then(result => {
           running.delete(key);
@@ -681,8 +689,8 @@ function App() {
             assetId: asset.id,
             kodeAset: asset.kodeAset,
             online: result.online === true,
-            internetStatus: result.internetStatus || 'unknown',
-            internetOnline: typeof result.internetOnline === 'boolean' ? result.internetOnline : undefined,
+            internetStatus: undefined,
+            internetOnline: undefined,
             checkedAt: Date.now(),
             source: 'browser-multipath',
             method: result.method,
@@ -721,28 +729,46 @@ function App() {
     previousBrowserStatesRef.current = current;
   }, [browserMonitorStates, assets, login]);
 
-  // Notifikasi realtime: hanya berdasarkan perubahan online boolean dari monitorStatus agent.
-  const previousAgentStatesRef = useRef(null);
+  // Notifikasi realtime: perubahan status langsung dari monitorStatus Firestore.
+  // Tidak bergantung pada interval browser dan tidak mengirim notifikasi pada snapshot awal.
+  const previousAgentStatesRef = useRef({});
   useEffect(() => {
     if (!login) return;
     const current = agentMonitorStates || {};
-    const previous = previousAgentStatesRef.current;
-    if (previous) {
-      Object.keys(current).forEach(id => {
-        const before = previous[id];
-        const after = current[id];
-        if (!before || !after || typeof before.online !== 'boolean' || typeof after.online !== 'boolean') return;
-        if (before.online === true && after.online === false && notificationEnabledRef.current && notificationTroubleRef.current) {
-          const asset = assets.find(a => a.id === id || a.kodeAset === id);
-          if (asset) showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline', aiReason: after.reason || 'Perangkat tidak merespons monitoring agent' } });
+    const previous = previousAgentStatesRef.current || {};
+    const seen = new Set();
+    Object.keys(current).forEach(id => {
+      const after = current[id];
+      if (!after) return;
+      const assetKey = String(after.kodeAset || after.assetId || id);
+      if (seen.has(assetKey)) return;
+      seen.add(assetKey);
+      const before = previous[assetKey];
+      if (!before || typeof before.online !== 'boolean' || typeof after.online !== 'boolean') return;
+      const asset = assets.find(a => String(a.id) === String(after.assetId) || String(a.kodeAset) === String(after.kodeAset));
+      if (!asset || !notificationEnabledRef.current) return;
+      if (before.online !== after.online) {
+        if (after.online === false && notificationTroubleRef.current) {
+          showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Offline', aiReason: after.reason || 'Perangkat tidak merespons' } });
+        } else if (after.online === true) {
+          showAssetNotification({ type: 'safe', asset: { ...asset, status: 'Online', aiReason: after.reason || 'Perangkat kembali merespons' } });
         }
-        if (before.online === false && after.online === true && notificationEnabledRef.current) {
-          const asset = assets.find(a => a.id === id || a.kodeAset === id);
-          if (asset) showAssetNotification({ type: 'safe', asset: { ...asset, status: 'Online', aiReason: after.reason || 'Perangkat kembali merespons monitoring agent' } });
+      }
+      if (typeof before.internetOnline === 'boolean' && typeof after.internetOnline === 'boolean' && before.internetOnline !== after.internetOnline) {
+        if (after.internetOnline === false && notificationTroubleRef.current) {
+          showAssetNotification({ type: 'trouble', asset: { ...asset, status: 'Internet Trouble', aiReason: after.internetReason || after.reason || 'Internet perangkat bermasalah' } });
+        } else if (after.internetOnline === true) {
+          showAssetNotification({ type: 'safe', asset: { ...asset, status: 'Internet Normal', aiReason: after.internetReason || 'Internet kembali normal' } });
         }
-      });
-    }
-    previousAgentStatesRef.current = current;
+      }
+    });
+    const next = {};
+    Object.keys(current).forEach(id => {
+      const st = current[id];
+      const key = String(st?.kodeAset || st?.assetId || id);
+      if (!next[key] || getMonitorCheckedAtMs(st?.checkedAt) >= getMonitorCheckedAtMs(next[key]?.checkedAt)) next[key] = st;
+    });
+    previousAgentStatesRef.current = next;
   }, [agentMonitorStates, assets, login]);
 
   // Search, Filter & View
@@ -1641,26 +1667,20 @@ function getMonitorState(asset, states = {}) {
   return candidates.sort((a,b) => getMonitorCheckedAtMs(b.checkedAt) - getMonitorCheckedAtMs(a.checkedAt))[0];
 }
 
-function getPreferredMonitorState(asset, agentStates = {}, browserStates = {}) {
+function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
   const agent = getMonitorState(asset, agentStates);
   const browser = getMonitorState(asset, browserStates);
-  const now = Date.now();
-  const agentAge = agent ? Math.max(0, now - getMonitorCheckedAtMs(agent.checkedAt)) : Infinity;
-  // Agent lokal adalah sumber utama. Browser hanya fallback ketika agent belum ada
-  // atau hasil agent sudah stale, supaya probe browser tidak menimpa status yang benar.
-  if (agent && agentAge <= 30000) return agent;
-  if (browser) return browser;
-  return agent;
-}
-
-function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
-  const st = getPreferredMonitorState(asset, agentStates, browserStates);
+  const agentFresh = agent && (Date.now() - getMonitorCheckedAtMs(agent.checkedAt) <= 45000);
+  const st = agentFresh ? agent : (browser || agent);
   if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
   return st.online === true ? 'Online' : 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
-  const st = getPreferredMonitorState(asset, agentStates, browserStates);
+  const agent = getMonitorState(asset, agentStates);
+  const browser = getMonitorState(asset, browserStates);
+  const agentFresh = agent && (Date.now() - getMonitorCheckedAtMs(agent.checkedAt) <= 45000);
+  const st = agentFresh ? agent : (browser || agent);
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
   if (value === 'trouble' || st.internetOnline === false) return 'Internet Trouble';

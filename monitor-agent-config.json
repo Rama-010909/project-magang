@@ -1,7 +1,16 @@
 {
   "topic": "",
-  "intervalSeconds": 30,
+  "intervalSeconds": 10,
   "failThreshold": 2,
   "notifyRecovery": true,
-  "ports": [80, 443, 22, 23, 8291, 8080, 9100, 3389]
+  "ports": [
+    80,
+    443,
+    22,
+    23,
+    8291,
+    8080,
+    9100,
+    3389
+  ]
 }
