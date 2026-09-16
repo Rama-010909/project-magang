@@ -11,10 +11,20 @@ $ApiQuery = ""
 $FirebaseIdToken = $null
 
 function Get-FirebaseIdToken {
-  # Firestore REST dapat memakai Firebase ID token atau request tanpa token
-  # jika Security Rules memang mengizinkan akses publik. API key proyek ini
-  # tidak dipakai pada endpoint Firestore karena key dapat dibatasi oleh HTTP referrer.
-  return $null
+  # Login Anonymous Firebase agar agent tetap bisa memakai Firestore Rules
+  # yang aman (request.auth != null), tanpa menyimpan password/service account.
+  try {
+    $url = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$([uri]::EscapeDataString($FirebaseApiKey))"
+    $body = @{ returnSecureToken = $true } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri $url -Method Post -ContentType "application/json" -Body $body -TimeoutSec 15
+    if ([string]::IsNullOrWhiteSpace([string]$r.idToken)) { throw 'Firebase Anonymous Auth tidak mengembalikan idToken.' }
+    Write-Host "Firebase Auth: Anonymous OK" -ForegroundColor Green
+    return [string]$r.idToken
+  } catch {
+    Write-Host "[FIREBASE AUTH ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Pastikan Authentication > Sign-in method > Anonymous sudah Enabled." -ForegroundColor Yellow
+    return $null
+  }
 }
 
 function Invoke-FirestoreRest($Uri,$Method="Get",$Body=$null) {

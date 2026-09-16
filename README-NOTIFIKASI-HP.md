@@ -36,3 +36,7 @@ LAN monitor PowerShell juga menampilkan notifikasi Windows lokal ketika mendetek
 - Scheduled GitHub Actions berjalan dengan interval minimum 5 menit dan jadwal dapat sedikit terlambat.
 - Vercel Hobby tidak digunakan sebagai scheduler per menit.
 - Jangan membuka port administrasi seperti Winbox/SSH/RDP ke internet hanya untuk monitoring. Gunakan `monitorUrl` atau port monitoring khusus.
+
+
+## Status FIX terbaru
+Untuk aset LAN/private, sumber status adalah Windows/Android LAN monitor. GitHub Actions hanya membaca status tersebut untuk meneruskan event ke FCM dan tidak menimpanya dengan hasil probe cloud.

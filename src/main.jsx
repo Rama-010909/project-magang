@@ -696,6 +696,8 @@ function App() {
   const [notificationTrouble, setNotificationTrouble] = useState(() => localStorage.getItem('asset_notify_trouble') !== 'false');
   const [notificationMaintenance, setNotificationMaintenance] = useState(() => localStorage.getItem('asset_notify_maintenance') !== 'false');
   const [notificationBusy, setNotificationBusy] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installedPwa, setInstalledPwa] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const notificationEnabledRef = useRef(notificationEnabled);
   const notificationTroubleRef = useRef(notificationTrouble);
   const notificationMaintenanceRef = useRef(notificationMaintenance);
@@ -703,6 +705,47 @@ function App() {
   notificationEnabledRef.current = notificationEnabled;
   notificationTroubleRef.current = notificationTrouble;
   notificationMaintenanceRef.current = notificationMaintenance;
+
+  // Tangkap prompt instalasi PWA. Browser tetap meminta tindakan pengguna sekali,
+  // setelah terpasang aplikasi berjalan dalam mode standalone.
+  useEffect(() => {
+    const onBeforeInstall = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const onAppInstalled = () => {
+      setInstalledPwa(true);
+      setInstallPrompt(null);
+      setToast('Aplikasi IT Asset berhasil dipasang');
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  async function handleInstallPwa() {
+    if (!installPrompt) return;
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+    } catch (_) {}
+    setInstallPrompt(null);
+  }
+
+  // Pasang service worker sejak aplikasi pertama kali dibuka.
+  // Ini penting agar PWA benar-benar siap dipasang dan shell aplikasi dapat
+  // dicache tanpa menunggu user membuka menu notifikasi.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    import('./notifications').then(({ registerNotificationServiceWorker }) => {
+      registerNotificationServiceWorker().catch((error) => {
+        console.warn('Service Worker PWA gagal didaftarkan:', error);
+      });
+    });
+  }, []);
 
   // Pulihkan registrasi FCM otomatis ketika izin browser sudah pernah diberikan.
   // Jadi setelah aktivasi pertama, perangkat tidak perlu membuka menu notifikasi
@@ -1169,6 +1212,16 @@ function App() {
         </div>
       </aside>
 
+      {installPrompt && !installedPwa && (
+        <div className="pwaInstallBanner">
+          <div>
+            <strong>Pasang IT Asset Management</strong>
+            <span>Setelah dipasang, buka sebagai aplikasi dan notifikasi tetap dapat diterima saat website tidak sedang dibuka.</span>
+          </div>
+          <button type="button" className="btnPrimary" onClick={handleInstallPwa}>Pasang Aplikasi</button>
+        </div>
+      )}
+
       {/* MOBILE TOP BAR */}
       <header className="mobileTopBar">
         <div className="mobileBrand">
@@ -1459,7 +1512,7 @@ function NotificationSettingsModal({ enabled, trouble, maintenance, busy, onEnab
         <div className={`notificationStatusCard ${enabled ? 'active' : ''}`}>
           <div>
             <b>{enabled ? 'Notifikasi aktif' : 'Notifikasi belum aktif'}</b>
-            <span>{enabled ? 'Notifikasi browser aktif. Peringatan muncul saat aplikasi/PWA sedang aktif.' : 'Aktifkan izin notifikasi browser terlebih dahulu.'}</span>
+            <span>{enabled ? 'Notifikasi push aktif. Setelah izin diberikan, notifikasi dapat masuk saat website/PWA berada di background atau tidak sedang dibuka.' : 'Aktifkan izin notifikasi browser terlebih dahulu.'}</span>
           </div>
           <button type="button" className="btnPrimary" onClick={onEnable} disabled={busy}>
             <Icons.Bell />
@@ -1479,7 +1532,7 @@ function NotificationSettingsModal({ enabled, trouble, maintenance, busy, onEnab
         </div>
 
         <div className="notificationSettingsNote">
-          Push notification membutuhkan izin browser dan koneksi HTTPS. Mode ini gratis tanpa Environment Variables. Browser perlu tetap aktif/menjalankan PWA agar perubahan Firestore dapat dipantau.
+          Push notification membutuhkan izin browser dan HTTPS. Setelah sekali diaktifkan dan aplikasi/PWA dipasang, FCM + Service Worker menangani notifikasi di background; monitoring aset tetap dijalankan oleh agent/cloud monitor.
         </div>
 
         <div className="modalFooter">
@@ -1509,9 +1562,15 @@ function getMonitorCheckedAtMs(value) {
 }
 
 function getMonitorState(asset, states = {}) {
-  // Prioritaskan dokumen monitorStatus dengan ID = kodeAset.
-  // Ini mencegah dokumen lama ber-ID acak mengambil alih status realtime.
-  return states?.[asset?.kodeAset] || states?.[asset?.id] || null;
+  const direct = states?.[asset?.kodeAset] || states?.[asset?.id];
+  if (direct) return direct;
+  const candidates = Object.values(states || {}).filter(Boolean).filter(st => {
+    const code = String(st.kodeAset || '');
+    const aid = String(st.assetId || '');
+    return code === String(asset?.kodeAset || '') || aid === String(asset?.id || '') || aid === String(asset?.kodeAset || '');
+  });
+  if (!candidates.length) return null;
+  return candidates.sort((a,b) => getMonitorCheckedAtMs(b.checkedAt) - getMonitorCheckedAtMs(a.checkedAt))[0];
 }
 
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {

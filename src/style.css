@@ -5460,3 +5460,12 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .officialSignatures { display: flex !important; flex-direction: row !important; width: 100% !important; }
   .officialSignatures .sigColumn { width: 50% !important; }
 }
+
+
+/* PWA install banner */
+.pwaInstallBanner{position:sticky;top:0;z-index:1200;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:12px 18px;border-bottom:1px solid rgba(127,127,127,.18);background:var(--card-bg,#fff);box-shadow:0 6px 22px rgba(0,0,0,.08)}
+.pwaInstallBanner>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.pwaInstallBanner strong{font-size:14px}
+.pwaInstallBanner span{font-size:12px;opacity:.72}
+.pwaInstallBanner .btnPrimary{white-space:nowrap}
+@media (max-width:700px){.pwaInstallBanner{align-items:flex-start;flex-direction:column;padding:12px}.pwaInstallBanner .btnPrimary{width:100%}}

@@ -24,3 +24,9 @@ Catatan:
 - Vercel hanya menjadi hosting web/API; bukan scheduler per menit pada paket Hobby.
 - Android native pada paket ini tetap punya monitor lokal dan notifikasi lokal saat service mendeteksi perubahan. Push FCM native memerlukan Android app Firebase yang terdaftar jika ingin dijadikan channel push terpisah.
 - Windows LAN agent sekarang juga menampilkan notifikasi Windows lokal saat transisi Offline/Online, selain ntfy bila Topic diatur.
+
+
+### Sinkronisasi notifikasi terbaru
+- `monitor-agent.ps1` adalah sumber status untuk aset LAN/private.
+- GitHub Actions tidak menimpa `monitorStatus` aset private.
+- `notificationState` dipakai untuk mengingat status terakhir yang sudah dikirim ke FCM agar notifikasi tidak spam.

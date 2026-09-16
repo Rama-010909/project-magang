@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { probeAsset } from '../lib/cloud-monitor.mjs';
+import { probeAsset, isCloudMonitorable } from '../lib/cloud-monitor.mjs';
 
 const PROJECT_ID = 'it-asset-diskominfo-batang';
 const API_KEY = 'AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo';
@@ -168,6 +168,22 @@ async function notifyChange(fcmAccessToken, tokens, asset, previous, online, pro
 
 let fcmFirestoreToken = null;
 
+async function getNotificationState(assetId, token) {
+  try {
+    const data = await firestoreFetch(`notificationState/${encodeURIComponent(assetId)}`, token);
+    return parseFields(data.fields || {});
+  } catch (_) { return null; }
+}
+
+async function setNotificationState(assetId, online, token) {
+  const body = { fields: { online: toValue(!!online), updatedAt: toValue(new Date()) } };
+  try {
+    await firestoreFetch(`notificationState/${encodeURIComponent(assetId)}`, token, { method: 'PATCH', body: JSON.stringify(body) });
+  } catch (e) {
+    console.warn(`[NOTIFY STATE] gagal ${assetId}: ${e.message}`);
+  }
+}
+
 async function main() {
   const token = await getAnonToken();
   fcmFirestoreToken = token;
@@ -194,6 +210,35 @@ async function main() {
   for (let i = 0; i < assets.length; i += 10) {
     const batch = assets.slice(i, i + 10);
     await Promise.all(batch.map(async asset => {
+      // Aset LAN/private HARUS dipantau oleh monitor-agent di jaringan lokal.
+      // GitHub Actions tidak boleh menimpa status LAN menjadi Offline.
+      if (!isCloudMonitorable(asset)) {
+        const monitorId = String(asset.kodeAset || asset.id);
+        try {
+          const current = await firestoreFetch(`monitorStatus/${encodeURIComponent(monitorId)}`, token);
+          const currentState = parseFields(current.fields || {});
+          if (fcmAccessToken && tokens.length && typeof currentState.online === 'boolean') {
+            const ns = await getNotificationState(asset.id, token);
+            if (ns && typeof ns.online === 'boolean' && ns.online !== currentState.online) {
+              const type = currentState.online ? 'recovery' : 'offline';
+              const title = currentState.online ? 'Perangkat Kembali Online' : 'Peringatan Perangkat Offline';
+              const name = asset.nama || asset.name || currentState.nama || 'Perangkat';
+              const code = asset.kodeAset || asset.id;
+              const body = `${name} • ${code} • ${currentState.online ? 'Online kembali' : 'Offline'}${currentState.reason ? ` • ${currentState.reason}` : ''}`;
+              await notifyChange(fcmAccessToken, tokens, asset, ns, currentState.online, { reason: currentState.reason || '' });
+              await setNotificationState(asset.id, currentState.online, token);
+              results.push({ assetId: asset.id, online: !!currentState.online, notified: 1, source: 'lan-agent' });
+              return;
+            }
+            if (!ns || typeof ns.online !== 'boolean') await setNotificationState(asset.id, currentState.online, token);
+          }
+          results.push({ assetId: asset.id, online: !!currentState.online, notified: 0, source: 'lan-agent' });
+        } catch (_) {
+          results.push({ assetId: asset.id, skipped: true, source: 'lan-agent' });
+        }
+        return;
+      }
+
       const probe = await probeAsset(asset);
       const previous = await getPreviousStatus(asset.id, token);
       const body = {
@@ -218,7 +263,8 @@ async function main() {
       if (fcmAccessToken && tokens.length && previous && typeof previous.online === 'boolean' && previous.online !== !!probe.online) {
         notified = await notifyChange(fcmAccessToken, tokens, asset, previous, !!probe.online, probe);
       }
-      results.push({ assetId: asset.id, online: !!probe.online, notified, reason: probe.reason });
+      await setNotificationState(asset.id, !!probe.online, token);
+      results.push({ assetId: asset.id, online: !!probe.online, notified, reason: probe.reason, source: 'cloud' });
     }));
   }
   console.log(JSON.stringify({ ok: true, checked: assets.length, online: results.filter(x => x.online).length, offline: results.filter(x => !x.online).length, notifications: results.reduce((n, x) => n + x.notified, 0), checkedAt: checkedAt.toISOString() }, null, 2));

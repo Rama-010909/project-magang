@@ -40,3 +40,31 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('message', event => { if (event.data?.type === 'SKIP_WAITING') self.skipWaiting(); });
+
+
+// PWA shell/runtime cache: keeps the installed app usable when the network is
+// temporarily unavailable. Firebase messaging continues to work in this same worker.
+const APP_CACHE = 'it-asset-pwa-v1';
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  // Jangan cache Firestore/API atau file yang bersifat dinamis.
+  if (url.pathname.startsWith('/api/') || url.pathname.includes('firestore')) return;
+  event.respondWith((async () => {
+    const cache = await caches.open(APP_CACHE);
+    const cached = await cache.match(req);
+    try {
+      const fresh = await fetch(req);
+      if (fresh && fresh.ok) cache.put(req, fresh.clone());
+      return fresh;
+    } catch (_) {
+      return cached || (req.mode === 'navigate' ? cache.match('/') : Response.error());
+    }
+  })());
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== APP_CACHE).map(k => caches.delete(k)))));
+});

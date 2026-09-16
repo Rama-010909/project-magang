@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /assets/{document=**} { allow read, write: if request.auth != null; }
+    match /maintenance/{document=**} { allow read, write: if request.auth != null; }
+    match /monitorStatus/{document=**} { allow read, write: if request.auth != null; }
+    match /notificationTokens/{document=**} { allow read, write: if request.auth != null; }
+    match /notificationState/{document=**} { allow read, write: if request.auth != null; }
+  }
+}
