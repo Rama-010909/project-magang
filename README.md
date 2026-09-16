@@ -1,29 +1,26 @@
-# IT Asset Management - Monitoring Otomatis
+# IT Asset Monitoring — Website Monitor + AI
 
-1. Masukkan IP sumber internet, IP perangkat, hostname, atau URL monitoring pada data aset.
-2. Jalankan `JALANKAN-MONITOR.bat` pada komputer Windows yang terhubung ke jaringan melalui Wi-Fi atau kabel.
-3. Agent mengambil data aset dari Firestore dan memeriksa setiap alamat secara berkala menggunakan HTTPS/HTTP, ICMP, dan port TCP umum.
-4. Hasil pemeriksaan disimpan ke koleksi `monitorStatus` dan dashboard menampilkan status Aman/Online atau Gangguan/Trouble.
+Sistem monitoring aset TI berbasis React/Vite/Firebase.
 
-Catatan penting: agent harus berada pada jaringan yang dapat menjangkau IP target. IP publik yang berada di balik NAT/firewall harus menyediakan akses monitoring yang sesuai. Jika tidak dapat dijangkau, status ditampilkan sebagai gangguan/tidak merespons, bukan dianggap aman.
+## Cara kerja
+- Website menjadi monitor utama ketika halaman monitoring dibuka.
+- Semua aset yang memiliki IP Address atau Monitor URL dipantau setiap 10 detik.
+- Status perangkat: Online / Offline / Menunggu Monitoring.
+- Status internet per-perangkat hanya dinyatakan Normal/Trouble jika aset menyediakan endpoint `internetMonitorUrl` yang benar-benar melaporkan status WAN/internet. Website tidak menganggap internet aset normal hanya karena HP/PC pemantau memiliki internet.
+- AI Network Analyst membaca snapshot hasil monitoring dan membuat ringkasan, gangguan, dan prioritas pemeriksaan.
+- Jika Gemini/Firebase AI Logic belum aktif atau gagal, sistem memakai analisis lokal sebagai fallback.
 
-## Auto monitoring
-Lihat `README-AUTO-MONITORING.md` dan `auto-discovery-config.example.json` untuk konfigurasi deteksi perangkat otomatis dari MikroTik.
+## AI
+Aktifkan Firebase AI Logic di Firebase Console > AI Services > AI Logic. Firebase menyediakan SDK JavaScript untuk web dan Gemini Developer API. App Check perlu dikonfigurasi untuk penggunaan produksi.
 
-## Satu aplikasi + notifikasi HP
+## Batasan browser
+Browser tidak menyediakan ICMP ping mentah. Pemeriksaan website menggunakan HTTP/HTTPS yang diizinkan browser dan dapat dipengaruhi Local Network Access, mixed content, CORS, firewall, dan layanan perangkat.
 
-Project ini sudah menyertakan Firebase Cloud Function pada folder `functions/` untuk mengirim notifikasi FCM ketika dokumen `monitorStatus/{assetId}` berubah status. Setelah login di HP, tekan tombol aktifkan notifikasi pada aplikasi dan izinkan notifikasi.
+## Menambahkan status internet perangkat
+Isi `URL Status Internet Perangkat` pada data aset jika perangkat/router memiliki endpoint yang mengembalikan salah satu format:
+- JSON: `{ "internetOnline": true }`
+- JSON: `{ "internetStatus": "normal" }`
+- JSON: `{ "internetStatus": "trouble" }`
+- teks yang mengandung `normal/online/ok` atau `trouble/offline/down/error`.
 
-Deploy function dari folder project:
-
-```bash
-cd functions
-npm install
-cd ..
-firebase deploy --only functions
-```
-
-Pastikan Firebase CLI sudah login dan project Firebase yang digunakan sudah dipilih. PWA tetap dipasang dari website Vercel melalui menu **Tambahkan ke layar utama**. Agent monitoring tetap dijalankan pada komputer yang memiliki akses ke jaringan target.
-
-## Cloud Monitoring Serius
-Lihat `README-CLOUD-SERIOUS.md`. Cloud monitor dapat berjalan tanpa Windows/Android yang selalu hidup untuk target yang benar-benar dapat dijangkau dari internet.
+Tanpa endpoint tersebut, status internet akan tetap `Belum Diperiksa` agar sistem tidak memberikan diagnosis palsu.

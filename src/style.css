@@ -5469,3 +5469,7 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 .pwaInstallBanner span{font-size:12px;opacity:.72}
 .pwaInstallBanner .btnPrimary{white-space:nowrap}
 @media (max-width:700px){.pwaInstallBanner{align-items:flex-start;flex-direction:column;padding:12px}.pwaInstallBanner .btnPrimary{width:100%}}
+
+.monitorAiCard{display:flex;justify-content:space-between;gap:18px;align-items:center;margin:18px 0;padding:18px;border:1px solid var(--border-color,#e5e7eb);border-radius:16px;background:var(--surface-1,#fff);box-shadow:0 8px 24px rgba(15,23,42,.06)}
+.monitorAiCard h3{margin:4px 0 6px}.monitorAiCard p{margin:0;line-height:1.55;max-width:850px}.monitorAiCard small{display:block;margin-top:8px;opacity:.7}.monitorAiCard .btnPrimary{white-space:nowrap}
+@media(max-width:700px){.monitorAiCard{align-items:stretch;flex-direction:column}.monitorAiCard .btnPrimary{width:100%}}

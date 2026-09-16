@@ -9,6 +9,7 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
+  setDoc,
   getDocs,
   writeBatch
 } from 'firebase/firestore';
@@ -19,6 +20,7 @@ import pemkabFullLogo from './assets/pemkab-batang-clean.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
 import './style.css';
 import { probeAssetFromBrowser, isPrivateIPv4 } from './local-network-monitor';
+import { analyzeMonitoringWithAI } from './ai-monitor';
 
 // ==========================================
 // KONSTANTA & DATA AWAL (DISIKOMINFO BATANG)
@@ -253,6 +255,7 @@ const EMPTY_FORM = {
   keterangan: '',
   fotoUrl: '',
   monitorUrl: '',
+    internetMonitorUrl: '',
   statusMode: 'realtime'
 };
 
@@ -613,6 +616,7 @@ function App() {
   const [agentMonitorStates, setAgentMonitorStates] = useState({});
   const [browserMonitorStates, setBrowserMonitorStates] = useState({});
   const browserMonitorStatesRef = useRef({});
+  const browserPersistedRef = useRef({});
 
   // Semua state monitoring dideklarasikan paling awal di App.
   // Jangan letakkan state ini setelah useEffect/useMemo lain agar tidak ada
@@ -623,8 +627,10 @@ function App() {
 
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [firebaseChecked, setFirebaseChecked] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState({ text: '', source: '' });
+  const [aiLoading, setAiLoading] = useState(false);
 
-  // Status dari Local LAN Monitor Agent (tetap bisa diperbarui walau tab web tidak melakukan ping).
+  // Status monitoring dari Firestore. Website monitor juga menulis perubahan status ke collection ini.
   useEffect(() => {
     if (!login) return;
     const unsub = onSnapshot(collection(db, 'monitorStatus'), snapshot => {
@@ -664,9 +670,8 @@ function App() {
     return () => unsub();
   }, [login]);
 
-  // Multi-path LAN monitoring dari sistem web saat dashboard/PWA sedang aktif.
-  // Ini adalah jalur tambahan: tidak menggantikan cloud monitor dan tidak membutuhkan
-  // monitor-agent.exe/PowerShell untuk probe browser. Browser tetap tunduk pada izin
+  // Website Monitor Engine. Jalur ini adalah monitor utama saat website/PWA aktif.
+  // Browser tetap tunduk pada izin
   // Local Network Access dan kebijakan mixed-content/CORS.
   useEffect(() => {
     if (!login || !assets.length) return;
@@ -689,8 +694,10 @@ function App() {
             assetId: asset.id,
             kodeAset: asset.kodeAset,
             online: result.online === true,
-            internetStatus: undefined,
-            internetOnline: undefined,
+            internetStatus: result.internetStatus,
+            internetOnline: result.internetOnline,
+            internetReason: result.internetReason,
+            internetMethod: result.internetMethod,
             checkedAt: Date.now(),
             source: 'browser-multipath',
             method: result.method,
@@ -701,6 +708,26 @@ function App() {
             browserMonitorStatesRef.current = next;
             return next;
           });
+          // Persist only state changes so a 10-second browser monitor does not
+          // create a Firestore write on every tick while the device is stable.
+          const previous = browserPersistedRef.current[key];
+          const signature = JSON.stringify({ online: row.online, internetOnline: row.internetOnline, internetStatus: row.internetStatus, method: row.method });
+          if (previous !== signature) {
+            browserPersistedRef.current[key] = signature;
+            setDoc(doc(db, 'monitorStatus', String(asset.id)), {
+              assetId: asset.id,
+              kodeAset: asset.kodeAset || '',
+              nama: asset.nama || asset.name || '',
+              online: row.online,
+              status: row.online ? 'online' : 'offline',
+              deviceStatus: row.online ? 'Online' : 'Offline',
+              ...(typeof row.internetOnline === 'boolean' ? { internetOnline: row.internetOnline, internetStatus: row.internetOnline ? 'Normal' : 'Trouble', internetReason: row.internetReason || '' } : {}),
+              checkedAt: new Date(),
+              source: 'website-monitor',
+              method: row.method || 'browser',
+              reason: row.reason || ''
+            }, { merge: true }).catch(err => console.warn('[WEBSITE MONITOR] Firestore sync gagal:', err));
+          }
         });
       }
       if (!cancelled) timer = setTimeout(run, 10000);
@@ -1452,7 +1479,22 @@ function App() {
           <MonitoringView
             assets={assets}
             monitorStates={agentMonitorStates}
+            browserMonitorStates={browserMonitorStates}
             aiAlerts={assets.map(a => ({ asset: a, ...analyzeAssetTrouble(a, maint), monitor: getMonitorState(a, agentMonitorStates) })).filter(x => x.trouble || x.monitor?.online === false)}
+            aiAnalysis={aiAnalysis}
+            aiLoading={aiLoading}
+            onRunAI={async () => {
+              setAiLoading(true);
+              try {
+                const rows = assets.map(asset => {
+                  const st = getMonitorState(asset, agentMonitorStates) || getMonitorState(asset, browserMonitorStates) || {};
+                  return { ...asset, ...st };
+                });
+                setAiAnalysis(await analyzeMonitoringWithAI(rows));
+              } finally {
+                setAiLoading(false);
+              }
+            }}
             go={go}
           />
         )}
@@ -2530,6 +2572,17 @@ function AssetFormView({ form, setForm, saveAsset, loading, editing, cancel, mon
           </label>
 
           <label className="formField">
+            <span className="fieldLabel">URL Status Internet Perangkat (Opsional)</span>
+            <input
+              type="url"
+              placeholder="Contoh: http://192.168.1.1/internet-status"
+              value={form.internetMonitorUrl || ''}
+              onChange={e => setForm({ ...form, internetMonitorUrl: e.target.value })}
+            />
+            <span className="fieldHelper">Gunakan hanya jika perangkat/router menyediakan endpoint yang melaporkan status WAN/internet dalam JSON atau teks. Tanpa endpoint ini, status internet per-perangkat tetap Belum Diperiksa.</span>
+          </label>
+
+          <label className="formField">
             <span className="fieldLabel">MAC Address (Jika Ada)</span>
             <input
               type="text"
@@ -3320,41 +3373,56 @@ function MaintenanceView({
 // ==========================================
 // KOMPONEN LAPORAN & REKAP (PRINT KOP SURAT)
 // ==========================================
-function MonitoringView({ assets, monitorStates, aiAlerts, go }) {
+function MonitoringView({ assets, monitorStates, browserMonitorStates, aiAlerts, aiAnalysis, aiLoading, onRunAI, go }) {
   const monitored = assets.filter(a => a.monitorUrl || a.ipAddress);
-  const offline = monitored.filter(a => getMonitorState(a, monitorStates)?.online === false);
-  const online = monitored.filter(a => getMonitorState(a, monitorStates)?.online === true);
-  const internetTrouble = monitored.filter(a => String(getMonitorState(a, monitorStates)?.internetStatus || '').toLowerCase() === 'trouble');
+  const getLive = asset => getMonitorState(asset, monitorStates) || getMonitorState(asset, browserMonitorStates) || {};
+  const offline = monitored.filter(a => getLive(a)?.online === false);
+  const online = monitored.filter(a => getLive(a)?.online === true);
+  const internetTrouble = monitored.filter(a => String(getLive(a)?.internetStatus || '').toLowerCase() === 'trouble' || getLive(a)?.internetOnline === false);
+  const internetUnknown = monitored.filter(a => getLive(a)?.online === true && !['normal','trouble'].includes(String(getLive(a)?.internetStatus || '').toLowerCase()) && getLive(a)?.internetOnline !== true);
   return (
     <div className="monitorPage">
       <div className="pageIntro">
-        <div><span className="smartEyebrow">REAL-TIME ASSET MONITOR</span><h2>Monitoring Perangkat</h2><p>Agent memeriksa perangkat dan memisahkan status perangkat dari indikasi sumber internet. Hasil dianalisis otomatis beserta keterangan penyebabnya.</p></div>
-        <div className="monitorRefresh">Agent LAN • pemeriksaan setiap 30 detik</div>
+        <div><span className="smartEyebrow">WEBSITE MONITOR ENGINE</span><h2>Monitoring Perangkat</h2><p>Website menjadi monitor aktif saat halaman ini dibuka. Semua aset ber-IP/monitor URL diperiksa berkala, lalu hasilnya dapat dianalisis AI.</p></div>
+        <div className="monitorRefresh">Browser Monitor • setiap 10 detik</div>
       </div>
-      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Offline</span></div></div>
+      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Offline</span></div><div className={internetTrouble.length?'danger':''}><b>{internetTrouble.length}</b><span>Internet Trouble</span></div></div>
+
+      <div className="monitorAiCard">
+        <div>
+          <span className="smartEyebrow">AI NETWORK ANALYST</span>
+          <h3>Analisis kondisi jaringan</h3>
+          <p>{aiAnalysis.text || 'AI akan membaca hasil monitoring terbaru. Status perangkat dan internet tetap berasal dari data pemeriksaan, bukan tebakan AI.'}</p>
+          {aiAnalysis.source && <small>Sumber analisis: {aiAnalysis.source === 'gemini' ? 'Gemini' : 'Analisis lokal'}</small>}
+        </div>
+        <button className="btnPrimary" type="button" onClick={onRunAI} disabled={aiLoading || !monitored.length}>{aiLoading ? 'Menganalisis...' : 'Analisis dengan AI'}</button>
+      </div>
+
       <div className="monitorList">
         {monitored.map(asset => {
-          const st=getMonitorState(asset, monitorStates) || {};
+          const st=getLive(asset);
           const ai=analyzeAssetTrouble(asset,[]);
           const isOff=st.online===false;
           const internet = String(st.internetStatus || '').toLowerCase();
           const statusLabel = isOff ? 'OFFLINE' : st.online ? 'ONLINE' : 'MENUNGGU';
-          const diagnosis = st.diagnosis || (ai.trouble ? `Indikasi kondisi aset ${ai.score}%` : 'Belum ada hasil diagnosis agent.');
+          const diagnosis = st.diagnosis || (isOff ? (st.reason || 'Perangkat tidak merespons pemeriksaan website.') : ai.trouble ? `Indikasi kondisi aset ${ai.score}%` : 'Tidak ada indikasi gangguan perangkat dari data saat ini.');
+          const internetLabel = internet === 'trouble' || st.internetOnline === false ? 'Internet Trouble' : st.internetOnline === true || internet === 'normal' ? 'Normal' : 'Belum Diperiksa';
           return <div className={`monitorRow ${isOff || internet==='trouble' ? 'isOffline':''}`} key={asset.id}>
             <div className={`monitorDot ${isOff || internet==='trouble' ? 'offline':st.online?'online':'pending'}`}></div>
             <div className="monitorMain">
               <b>{asset.nama}</b>
               <small>{asset.ipAddress || asset.monitorUrl}</small>
-              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'offline')}</span><span><strong>Internet:</strong> {getLiveInternetStatus(asset, monitorStates, {})}</span>
+              <span><strong>{statusLabel}</strong> • Perangkat: {st.deviceStatus || (st.online ? 'aktif' : 'offline')}</span>
+              <span><strong>Internet:</strong> {internetLabel}</span>
               <span>{diagnosis}</span>
-              <small className="monitorSource">{st.source === 'agent' ? `Agent LAN • ${st.method || 'monitoring'} • confidence ${st.confidence || '-'}%` : 'Browser monitor'}</small>
+              <small className="monitorSource">{st.source === 'agent' ? `Agent LAN • ${st.method || 'monitoring'}` : 'Website Monitor • 10 detik'}</small>
             </div>
             <button className="btnLight" onClick={()=>go('inventaris')}>Lihat aset</button>
           </div>
         })}
         {!monitored.length && <div className="monitorEmpty">Belum ada perangkat yang memiliki IP Address atau Alamat Monitoring. Tambahkan pada data aset untuk mulai dipantau.</div>}
       </div>
-      <div className="monitorNote"><b>Analisis otomatis:</b> sistem membedakan perangkat aktif/mati atau tidak terjangkau, indikasi sumber internet aman/trouble, lalu memberikan diagnosis seperti perangkat mati, jalur LAN terputus, atau gangguan internet. Ini adalah analisis berbasis hasil pemeriksaan agent, bukan model AI yang dapat memastikan kondisi fisik tanpa sensor/API perangkat.</div>
+      <div className="monitorNote"><b>Catatan:</b> {internetUnknown.length ? `${internetUnknown.length} perangkat sedang online tetapi status internet per-perangkat belum dapat diverifikasi.` : 'Status internet hanya dinyatakan Normal/Trouble jika ada data pemeriksaan internet yang benar-benar tersedia.'} Website tidak dapat melakukan ICMP ping dari browser dan tidak boleh menganggap internet sebuah perangkat normal hanya karena HP/PC yang membuka website sedang online.</div>
     </div>
   );
 }

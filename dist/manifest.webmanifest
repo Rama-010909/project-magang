@@ -1,0 +1,30 @@
+{
+  "name": "IT Asset Management Diskominfo Batang",
+  "short_name": "IT Asset Batang",
+  "description": "Sistem pengelolaan dan monitoring aset IT Diskominfo Kabupaten Batang",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b1e36",
+  "theme_color": "#0b1e36",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
+  "prefer_related_applications": false
+}
