@@ -30,3 +30,7 @@ Catatan:
 - `monitor-agent.ps1` adalah sumber status untuk aset LAN/private.
 - GitHub Actions tidak menimpa `monitorStatus` aset private.
 - `notificationState` dipakai untuk mengingat status terakhir yang sudah dikirim ke FCM agar notifikasi tidak spam.
+
+
+### State notifikasi
+State perubahan notifikasi disimpan di `monitorStatus/{assetId}/_notification/state` agar memakai permission path `monitorStatus/{document=**}` yang sama dengan status monitor. Ini menghindari error permission pada collection `notificationState` pada deployment Firestore Rules yang belum diperbarui.

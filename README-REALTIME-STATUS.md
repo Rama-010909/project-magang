@@ -9,3 +9,7 @@ Jika realtime tetap `Menunggu Monitoring`, jalankan `JALANKAN-MONITOR-AI.bat` da
 Agent sekarang memakai Firebase Firestore REST API + API key proyek untuk membaca aset dan menulis `monitorStatus`.
 
 Status realtime dianggap valid selama hasil pengecekan terakhir berumur maksimal 120 detik.
+
+
+### State notifikasi
+State perubahan notifikasi disimpan di `monitorStatus/{assetId}/_notification/state` agar memakai permission path `monitorStatus/{document=**}` yang sama dengan status monitor. Ini menghindari error permission pada collection `notificationState` pada deployment Firestore Rules yang belum diperbarui.

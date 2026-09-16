@@ -185,9 +185,23 @@ async function notifyInternetChange(fcmAccessToken, tokens, asset, previous, int
 
 let fcmFirestoreToken = null;
 
+// Simpan state notifikasi di subcollection monitorStatus agar mengikuti
+// permission path monitorStatus/{document=**}. Ini menghindari dependency
+// tambahan pada collection notificationState yang pada deployment lama bisa
+// belum ikut ter-deploy di Firestore Rules.
+//
+// Path:
+//   monitorStatus/{assetId}/_notification/state
+//
+// Dokumen ini terpisah dari monitorStatus/{assetId}, jadi agent LAN tetap
+// bebas menulis status monitor setiap 10 detik tanpa menghapus state notifikasi.
+function notificationStatePath(assetId) {
+  return `monitorStatus/${encodeURIComponent(assetId)}/_notification/state`;
+}
+
 async function getNotificationState(assetId, token) {
   try {
-    const data = await firestoreFetch(`notificationState/${encodeURIComponent(assetId)}`, token);
+    const data = await firestoreFetch(notificationStatePath(assetId), token);
     return parseFields(data.fields || {});
   } catch (_) { return null; }
 }
@@ -197,9 +211,12 @@ async function setNotificationState(assetId, online, internetOnline, token) {
   if (typeof internetOnline === 'boolean') fields.internetOnline = toValue(internetOnline);
   const body = { fields };
   try {
-    await firestoreFetch(`notificationState/${encodeURIComponent(assetId)}`, token, { method: 'PATCH', body: JSON.stringify(body) });
+    await firestoreFetch(notificationStatePath(assetId), token, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    });
   } catch (e) {
-    console.warn(`[NOTIFY STATE] gagal ${assetId}: ${e.message}`);
+    console.warn(`[NOTIFY STATE] gagal ${assetId} (${notificationStatePath(assetId)}): ${e.message}`);
   }
 }
 
