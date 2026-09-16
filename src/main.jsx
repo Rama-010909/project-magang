@@ -18,6 +18,7 @@ import pemkabLogo from './assets/pemkab-batang.png';
 import pemkabFullLogo from './assets/pemkab-batang-clean.png';
 import diskominfoLogo from './assets/diskominfo-batang.jpg';
 import './style.css';
+import { probeAssetFromBrowser, isPrivateIPv4 } from './local-network-monitor';
 
 // ==========================================
 // KONSTANTA & DATA AWAL (DISIKOMINFO BATANG)
@@ -610,6 +611,8 @@ function App() {
   const [assets, setAssets] = useState([]);
   const [maint, setMaint] = useState([]);
   const [agentMonitorStates, setAgentMonitorStates] = useState({});
+  const [browserMonitorStates, setBrowserMonitorStates] = useState({});
+  const browserMonitorStatesRef = useRef({});
 
   // Semua state monitoring dideklarasikan paling awal di App.
   // Jangan letakkan state ini setelah useEffect/useMemo lain agar tidak ada
@@ -652,6 +655,71 @@ function App() {
     }, err => console.warn('Monitor agent status:', err));
     return () => unsub();
   }, [login]);
+
+  // Multi-path LAN monitoring dari sistem web saat dashboard/PWA sedang aktif.
+  // Ini adalah jalur tambahan: tidak menggantikan cloud monitor dan tidak membutuhkan
+  // monitor-agent.exe/PowerShell untuk probe browser. Browser tetap tunduk pada izin
+  // Local Network Access dan kebijakan mixed-content/CORS.
+  useEffect(() => {
+    if (!login || !assets.length) return;
+    let cancelled = false;
+    let timer = null;
+    const running = new Set();
+
+    const run = async () => {
+      const candidates = assets.filter(a => a?.ipAddress || a?.monitorUrl).slice(0, 80);
+      for (const asset of candidates) {
+        const key = String(asset.kodeAset || asset.id || '');
+        if (!key || running.has(key)) continue;
+        // Private IPs are probed locally. Public targets remain the cloud monitor's job.
+        if (asset.ipAddress && !isPrivateIPv4(asset.ipAddress) && !asset.monitorUrl) continue;
+        running.add(key);
+        probeAssetFromBrowser(asset).then(result => {
+          running.delete(key);
+          if (cancelled || result.online === null) return;
+          const row = {
+            assetId: asset.id,
+            kodeAset: asset.kodeAset,
+            online: result.online === true,
+            internetStatus: navigator.onLine ? 'normal' : 'trouble',
+            internetOnline: navigator.onLine,
+            checkedAt: Date.now(),
+            source: 'browser-multipath',
+            method: result.method,
+            reason: result.reason
+          };
+          setBrowserMonitorStates(prev => {
+            const next = { ...prev, [key]: row };
+            browserMonitorStatesRef.current = next;
+            return next;
+          });
+        });
+      }
+      if (!cancelled) timer = setTimeout(run, 20000);
+    };
+    run();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [login, assets]);
+
+  // Notifikasi dari jalur browser juga mengikuti perubahan Online/Offline.
+  const previousBrowserStatesRef = useRef(null);
+  useEffect(() => {
+    if (!login) return;
+    const current = browserMonitorStates || {};
+    const previous = previousBrowserStatesRef.current;
+    if (previous) {
+      Object.keys(current).forEach(id => {
+        const before = previous[id];
+        const after = current[id];
+        if (!before || !after || typeof before.online !== 'boolean' || typeof after.online !== 'boolean') return;
+        if (before.online !== after.online && notificationEnabledRef.current) {
+          const asset = assets.find(a => String(a.id) === String(after.assetId) || String(a.kodeAset) === String(after.kodeAset));
+          if (asset) showAssetNotification({ type: after.online ? 'safe' : 'trouble', asset: { ...asset, status: after.online ? 'Online' : 'Offline', aiReason: after.reason } });
+        }
+      });
+    }
+    previousBrowserStatesRef.current = current;
+  }, [browserMonitorStates, assets, login]);
 
   // Notifikasi realtime: hanya berdasarkan perubahan online boolean dari monitorStatus agent.
   const previousAgentStatesRef = useRef(null);
@@ -1574,14 +1642,17 @@ function getMonitorState(asset, states = {}) {
 }
 
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
-  // Satu-satunya sumber status perangkat adalah monitorStatus dari LAN agent.
-  const st = getMonitorState(asset, agentStates);
+  const agent = getMonitorState(asset, agentStates);
+  const browser = getMonitorState(asset, browserStates);
+  const st = browser && (!agent || getMonitorCheckedAtMs(browser.checkedAt) >= getMonitorCheckedAtMs(agent.checkedAt)) ? browser : agent;
   if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
   return st.online === true ? 'Online' : 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
-  const st = getMonitorState(asset, agentStates);
+  const agent = getMonitorState(asset, agentStates);
+  const browser = getMonitorState(asset, browserStates);
+  const st = browser && (!agent || getMonitorCheckedAtMs(browser.checkedAt) >= getMonitorCheckedAtMs(agent.checkedAt)) ? browser : agent;
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
   if (value === 'trouble' || st.internetOnline === false) return 'Internet Trouble';

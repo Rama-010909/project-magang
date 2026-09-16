@@ -185,13 +185,13 @@ function Test-Target($asset) {
       # dan tidak bergantung pada parameter -TimeoutSeconds yang hanya tersedia pada
       # versi PowerShell tertentu.
       $pinger = New-Object System.Net.NetworkInformation.Ping
-      $reply = $pinger.Send($hostName, 3500)
+      $reply = $pinger.Send($hostName, 1500)
       if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
         $sw.Stop(); return @{online=$true; latency=[int]$reply.RoundtripTime; method='ICMP'; reason="IP perangkat $hostName merespons ping"}
       }
     } catch {}
 
-    foreach ($port in @(443,80,8291,8728,8729,8080,9100,3389)) {
+    foreach ($port in @(443,80,8080,8291,8728,8729,9100,3389,445,139,554,8000,37777,34567)) {
       try {
         $client = New-Object Net.Sockets.TcpClient
         $task = $client.ConnectAsync($hostName,[int]$port)
