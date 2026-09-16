@@ -689,11 +689,12 @@ function App() {
         running.add(key);
         probeAssetFromBrowser(asset).then(result => {
           running.delete(key);
-          if (cancelled || result.online === null) return;
+          if (cancelled) return;
           const row = {
             assetId: asset.id,
             kodeAset: asset.kodeAset,
-            online: result.online === true,
+            // null = browser belum bisa memverifikasi, bukan berarti Offline.
+            online: result.online,
             internetStatus: result.internetStatus,
             internetOnline: result.internetOnline,
             internetReason: result.internetReason,
@@ -701,13 +702,22 @@ function App() {
             checkedAt: Date.now(),
             source: 'browser-multipath',
             method: result.method,
-            reason: result.reason
+            reason: result.reason,
+            errorType: result.errorType || '',
+            probeType: result.probeType || '',
+            checkedUrl: result.checkedUrl || ''
           };
           setBrowserMonitorStates(prev => {
             const next = { ...prev, [key]: row };
             browserMonitorStatesRef.current = next;
             return next;
           });
+
+          // Gagal diverifikasi dari browser tidak boleh ditulis sebagai Offline.
+          // Status Offline hanya berasal dari sumber yang benar-benar dapat
+          // membuktikan perangkat tidak terjangkau (mis. LAN agent/router).
+          if (typeof row.online !== 'boolean') return;
+
           // Persist only state changes so a 10-second browser monitor does not
           // create a Firestore write on every tick while the device is stable.
           const previous = browserPersistedRef.current[key];
@@ -719,8 +729,8 @@ function App() {
               kodeAset: asset.kodeAset || '',
               nama: asset.nama || asset.name || '',
               online: row.online,
-              status: row.online ? 'online' : 'offline',
-              deviceStatus: row.online ? 'Online' : 'Offline',
+              status: 'online',
+              deviceStatus: 'Online',
               ...(typeof row.internetOnline === 'boolean' ? { internetOnline: row.internetOnline, internetStatus: row.internetOnline ? 'Normal' : 'Trouble', internetReason: row.internetReason || '' } : {}),
               checkedAt: new Date(),
               source: 'website-monitor',
@@ -1710,19 +1720,22 @@ function getMonitorState(asset, states = {}) {
 }
 
 function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
-  const agent = getMonitorState(asset, agentStates);
-  const browser = getMonitorState(asset, browserStates);
-  const agentFresh = agent && (Date.now() - getMonitorCheckedAtMs(agent.checkedAt) <= 45000);
-  const st = agentFresh ? agent : (browser || agent);
-  if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
+  const st = getPreferredMonitorState(asset, agentStates, browserStates);
+  if (!st) return 'Menunggu Monitoring';
+  if (st.online === null) return 'Tidak Terjangkau';
+  if (typeof st.online !== 'boolean') return 'Menunggu Monitoring';
   return st.online === true ? 'Online' : 'Offline';
 }
 
-function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
+function getPreferredMonitorState(asset, agentStates = {}, browserStates = {}) {
   const agent = getMonitorState(asset, agentStates);
   const browser = getMonitorState(asset, browserStates);
   const agentFresh = agent && (Date.now() - getMonitorCheckedAtMs(agent.checkedAt) <= 45000);
-  const st = agentFresh ? agent : (browser || agent);
+  return agentFresh ? agent : (browser || agent);
+}
+
+function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
+  const st = getPreferredMonitorState(asset, agentStates, browserStates);
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
   if (value === 'trouble' || st.internetOnline === false) return 'Internet Trouble';
@@ -3375,9 +3388,10 @@ function MaintenanceView({
 // ==========================================
 function MonitoringView({ assets, monitorStates, browserMonitorStates, aiAlerts, aiAnalysis, aiLoading, onRunAI, go }) {
   const monitored = assets.filter(a => a.monitorUrl || a.ipAddress);
-  const getLive = asset => getMonitorState(asset, monitorStates) || getMonitorState(asset, browserMonitorStates) || {};
+  const getLive = asset => getPreferredMonitorState(asset, monitorStates, browserMonitorStates) || {};
   const offline = monitored.filter(a => getLive(a)?.online === false);
   const online = monitored.filter(a => getLive(a)?.online === true);
+  const unreachable = monitored.filter(a => getLive(a)?.online === null);
   const internetTrouble = monitored.filter(a => String(getLive(a)?.internetStatus || '').toLowerCase() === 'trouble' || getLive(a)?.internetOnline === false);
   const internetUnknown = monitored.filter(a => getLive(a)?.online === true && !['normal','trouble'].includes(String(getLive(a)?.internetStatus || '').toLowerCase()) && getLive(a)?.internetOnline !== true);
   return (
@@ -3386,7 +3400,7 @@ function MonitoringView({ assets, monitorStates, browserMonitorStates, aiAlerts,
         <div><span className="smartEyebrow">WEBSITE MONITOR ENGINE</span><h2>Monitoring Perangkat</h2><p>Website menjadi monitor aktif saat halaman ini dibuka. Semua aset ber-IP/monitor URL diperiksa berkala, lalu hasilnya dapat dianalisis AI.</p></div>
         <div className="monitorRefresh">Browser Monitor • setiap 10 detik</div>
       </div>
-      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Offline</span></div><div className={internetTrouble.length?'danger':''}><b>{internetTrouble.length}</b><span>Internet Trouble</span></div></div>
+      <div className="monitorStats"><div><b>{monitored.length}</b><span>Dipantau</span></div><div><b>{online.length}</b><span>Perangkat Aktif</span></div><div className={offline.length?'danger':''}><b>{offline.length}</b><span>Perangkat Offline</span></div><div><b>{unreachable.length}</b><span>Tidak Terjangkau</span></div><div className={internetTrouble.length?'danger':''}><b>{internetTrouble.length}</b><span>Internet Trouble</span></div></div>
 
       <div className="monitorAiCard">
         <div>
@@ -3403,9 +3417,10 @@ function MonitoringView({ assets, monitorStates, browserMonitorStates, aiAlerts,
           const st=getLive(asset);
           const ai=analyzeAssetTrouble(asset,[]);
           const isOff=st.online===false;
+          const isUnreachable=st.online===null;
           const internet = String(st.internetStatus || '').toLowerCase();
-          const statusLabel = isOff ? 'OFFLINE' : st.online ? 'ONLINE' : 'MENUNGGU';
-          const diagnosis = st.diagnosis || (isOff ? (st.reason || 'Perangkat tidak merespons pemeriksaan website.') : ai.trouble ? `Indikasi kondisi aset ${ai.score}%` : 'Tidak ada indikasi gangguan perangkat dari data saat ini.');
+          const statusLabel = isOff ? 'OFFLINE' : st.online ? 'ONLINE' : isUnreachable ? 'TIDAK TERJANGKAU' : 'MENUNGGU';
+          const diagnosis = st.diagnosis || (isOff ? (st.reason || 'Perangkat dinyatakan offline oleh sumber monitoring.') : isUnreachable ? (st.reason || 'Website belum dapat memverifikasi perangkat. Ini bukan bukti perangkat mati.') : ai.trouble ? `Indikasi kondisi aset ${ai.score}%` : 'Tidak ada indikasi gangguan perangkat dari data saat ini.');
           const internetLabel = internet === 'trouble' || st.internetOnline === false ? 'Internet Trouble' : st.internetOnline === true || internet === 'normal' ? 'Normal' : 'Belum Diperiksa';
           return <div className={`monitorRow ${isOff || internet==='trouble' ? 'isOffline':''}`} key={asset.id}>
             <div className={`monitorDot ${isOff || internet==='trouble' ? 'offline':st.online?'online':'pending'}`}></div>
@@ -3422,7 +3437,7 @@ function MonitoringView({ assets, monitorStates, browserMonitorStates, aiAlerts,
         })}
         {!monitored.length && <div className="monitorEmpty">Belum ada perangkat yang memiliki IP Address atau Alamat Monitoring. Tambahkan pada data aset untuk mulai dipantau.</div>}
       </div>
-      <div className="monitorNote"><b>Catatan:</b> {internetUnknown.length ? `${internetUnknown.length} perangkat sedang online tetapi status internet per-perangkat belum dapat diverifikasi.` : 'Status internet hanya dinyatakan Normal/Trouble jika ada data pemeriksaan internet yang benar-benar tersedia.'} Website tidak dapat melakukan ICMP ping dari browser dan tidak boleh menganggap internet sebuah perangkat normal hanya karena HP/PC yang membuka website sedang online.</div>
+      <div className="monitorNote"><b>Catatan:</b> {unreachable.length ? `${unreachable.length} perangkat belum dapat diverifikasi dari browser; status ini tidak dihitung sebagai Offline. ` : ''}{internetUnknown.length ? `${internetUnknown.length} perangkat sedang online tetapi status internet per-perangkat belum dapat diverifikasi. ` : 'Status internet hanya dinyatakan Normal/Trouble jika ada data pemeriksaan internet yang benar-benar tersedia. '}Website tidak dapat melakukan ICMP ping dari browser. Status Offline hanya boleh berasal dari sumber monitoring yang benar-benar dapat membuktikan perangkat tidak terjangkau.</div>
     </div>
   );
 }

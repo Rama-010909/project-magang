@@ -1,0 +1,7 @@
+MONITOR WINDOWS - GRATIS
+1. Install Python 3.11+.
+2. Edit config.json dan masukkan IP aset.
+3. Jalankan:
+   python monitor.py
+Pengecekan dilakukan setiap 10 detik.
+Catatan: contoh ini melakukan TCP reachability lokal. Integrasi Firestore perlu disesuaikan dengan kredensial/rules project agar aman.

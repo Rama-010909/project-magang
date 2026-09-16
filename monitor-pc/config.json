@@ -1,0 +1,10 @@
+{
+  "intervalSeconds": 10,
+  "assets": [
+    {
+      "id": "contoh-1",
+      "kodeAset": "PC-001",
+      "ipAddress": "192.168.1.10"
+    }
+  ]
+}

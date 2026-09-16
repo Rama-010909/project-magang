@@ -94,7 +94,7 @@ export async function enableAssetNotifications() {
   return { permission, token };
 }
 
-export function showAssetNotification({ type = 'trouble', asset = {} } = {}) {
+export async function showAssetNotification({ type = 'trouble', asset = {} } = {}) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return false;
   const title = type === 'trouble' ? 'Peringatan Aset Trouble' : 'Aset Kembali Aman';
   const body = `${asset.nama || asset.name || 'Perangkat'} (${asset.kodeAset || asset.id || 'tanpa kode'}) • ${asset.status || 'Perlu diperiksa'}${asset.lokasi ? ` • ${asset.lokasi}` : ''}`;
@@ -110,9 +110,10 @@ export function showAssetNotification({ type = 'trouble', asset = {} } = {}) {
 
   try {
     if (activeRegistration) {
-      activeRegistration.showNotification(title, options);
+      await activeRegistration.showNotification(title, options);
     } else if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(reg => reg.showNotification(title, options)).catch(() => {});
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(title, options);
     }
     return true;
   } catch (_) {
