@@ -249,7 +249,7 @@ async function main() {
           online: toValue(!!probe.online),
           status: toValue(probe.online ? 'online' : 'offline'),
           deviceStatus: toValue(probe.online ? 'Online' : 'Offline'),
-          internetStatus: toValue(probe.online ? 'Normal' : 'Belum Diperiksa'),
+          internetStatus: toValue(probe.online ? 'Normal' : 'Internet Trouble'),
           reason: toValue(String(probe.reason || '')),
           method: toValue(String(probe.method || '')),
           latency: toValue(Number(probe.latency || 0)),

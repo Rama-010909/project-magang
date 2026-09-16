@@ -52,15 +52,15 @@ if (Test-Path $EmbeddedAI) { . $EmbeddedAI }
 
 if (!(Test-Path $ConfigPath) -or [string]::IsNullOrWhiteSpace(([string]((Get-Content $ConfigPath -Raw | ConvertFrom-Json).topic))) ) {
   $topic = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 28 | ForEach-Object {[char]$_})
-  @{ topic=$topic; intervalSeconds=30; failThreshold=1; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+  @{ topic=$topic; intervalSeconds=10; failThreshold=1; notifyRecovery=$true; ports=@(80,443,22,23,8291,8080,9100,3389) } | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
   Write-Host "Config dibuat. TOPIC NOTIFIKASI: $topic" -ForegroundColor Green
   Write-Host "Simpan topic ini dan subscribe di aplikasi ntfy." -ForegroundColor Yellow
 }
 $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 $Topic = [string]$config.topic
-$Interval = [int]$config.intervalSeconds
+$Interval = 10
 $Threshold = 1 # Satu kali gagal = Offline; tidak ada grace period.
-if ($Interval -lt 10) { $Interval = 30 }
+if ($Interval -lt 5) { $Interval = 5 }
 $States = @{}
 $AssetCache = @()
 $MonitorDocMap = @{}
@@ -82,7 +82,7 @@ function Get-Assets {
       $docId = ($_.name -split '/')[-1]
       $kode = [string](Get-FieldValue $f.kodeAset)
       if ([string]::IsNullOrWhiteSpace($kode)) { $kode = $docId }
-      [pscustomobject]@{ id=$docId; monitorId=$kode; nama=(Get-FieldValue $f.nama); kodeAset=$kode; ipAddress=(Get-FieldValue $f.ipAddress); monitorUrl=(Get-FieldValue $f.monitorUrl); lokasi=(Get-FieldValue $f.lokasi) }
+      [pscustomobject]@{ id=$docId; monitorId=$kode; nama=(Get-FieldValue $f.nama); kodeAset=$kode; ipAddress=(Get-FieldValue $f.ipAddress); monitorUrl=(Get-FieldValue $f.monitorUrl); internetIp=(Get-FieldValue $f.internetIp); publicIp=(Get-FieldValue $f.publicIp); ipPublic=(Get-FieldValue $f.ipPublic); ipInternet=(Get-FieldValue $f.ipInternet); internetCheckUrl=(Get-FieldValue $f.internetCheckUrl); monitorPorts=(Get-FieldValue $f.monitorPorts); lokasi=(Get-FieldValue $f.lokasi) }
     })
     $script:AssetCache = @($rows)
     $script:LastAssetRefresh = Get-Date
@@ -207,15 +207,80 @@ function Test-Target($asset) {
   return @{online=$false; latency=$null; method='ICMP/TCP'; reason="Tidak ada target perangkat yang merespons: $($targets -join ', ')"}
 }
 
-function Get-InternetHealth {
-  # Ini adalah kesehatan sumber internet dari PC monitoring/LAN, disimpan terpisah.
-  $sw = [Diagnostics.Stopwatch]::StartNew(); $passed=0
-  try { Invoke-WebRequest -Uri 'https://www.google.com/generate_204' -Method Head -UseBasicParsing -TimeoutSec 6 | Out-Null; $passed++ } catch {}
-  try { Invoke-WebRequest -Uri 'https://www.cloudflare.com/cdn-cgi/trace' -Method Head -UseBasicParsing -TimeoutSec 6 | Out-Null; $passed++ } catch {}
+function Get-PublicInternetTargets($asset) {
+  $raw = @()
+  foreach ($field in @('internetIp','publicIp','ipPublic','ipInternet')) {
+    $value = [string]$asset.$field
+    if (-not [string]::IsNullOrWhiteSpace($value)) { $raw += $value }
+  }
+  if (-not [string]::IsNullOrWhiteSpace([string]$asset.ipAddress)) { $raw += [string]$asset.ipAddress }
+  $out = @()
+  foreach ($item in $raw) {
+    foreach ($m in [regex]::Matches($item, '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)')) {
+      $ip = $m.Value
+      if (-not (Test-IsPrivateIPv4 $ip)) { $out += $ip }
+    }
+  }
+  return @($out | Select-Object -Unique)
+}
+function Test-IsPrivateIPv4($ip) {
+  $p = [string]$ip -split '\.'
+  if ($p.Count -ne 4) { return $true }
+  try { $a=[int]$p[0]; $b=[int]$p[1] } catch { return $true }
+  return ($a -eq 10 -or $a -eq 127 -or $a -eq 0 -or ($a -eq 169 -and $b -eq 254) -or ($a -eq 172 -and $b -ge 16 -and $b -le 31) -or ($a -eq 192 -and $b -eq 168) -or $a -ge 224)
+}
+function Test-PublicIpReachability($ip, $ports=@(443,80,8291,8728,8729)) {
+  foreach ($port in $ports) {
+    try {
+      $client = New-Object Net.Sockets.TcpClient
+      $task = $client.ConnectAsync($ip,[int]$port)
+      if ($task.Wait(1200) -and $client.Connected) {
+        $client.Close()
+        return @{online=$true; method="WAN-IP:TCP:$port"; reason="IP Internet $ip merespons pada port $port"}
+      }
+      $client.Close()
+    } catch {}
+  }
+  try {
+    $pinger = New-Object System.Net.NetworkInformation.Ping
+    $reply = $pinger.Send($ip,1200)
+    if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+      return @{online=$true; method='WAN-IP:ICMP'; latency=[int]$reply.RoundtripTime; reason="IP Internet $ip merespons ping"}
+    }
+  } catch {}
+  return @{online=$false; method='WAN-IP'; reason="IP Internet $ip tidak merespons probe"}
+}
+function Test-InternetCheckUrl($url) {
+  if ([string]::IsNullOrWhiteSpace([string]$url)) { return $null }
+  try {
+    $sw=[Diagnostics.Stopwatch]::StartNew()
+    $r=Invoke-WebRequest -Uri ([string]$url) -Method Get -UseBasicParsing -TimeoutSec 5
+    $sw.Stop()
+    if ([int]$r.StatusCode -ge 200 -and [int]$r.StatusCode -lt 400) { return @{online=$true; latency=$sw.ElapsedMilliseconds; method='InternetCheckURL'; reason="Internet check URL merespons HTTP $($r.StatusCode)"} }
+  } catch {}
+  return @{online=$false; method='InternetCheckURL'; reason='Internet check URL gagal diakses'}
+}
+function Get-InternetHealth($asset) {
+  # Prioritas 1: alamat Internet/WAN yang memang dicatat pada aset.
+  $targets=Get-PublicInternetTargets $asset
+  if ($targets.Count -gt 0) {
+    foreach ($ip in $targets) {
+      $r=Test-PublicIpReachability $ip
+      if ($r.online) { return @{online=$true; latency=$(if($null -ne $r.latency){$r.latency}else{0}); method=$r.method; reason=$r.reason; sourceIp=$ip} }
+    }
+    # Jika IP WAN terdaftar tetapi tidak merespons, jangan langsung menebak.
+    # Lakukan probe URL internet dari monitor sebagai bukti jalur Internet cadangan.
+  }
+  $urlResult=Test-InternetCheckUrl $asset.internetCheckUrl
+  if ($null -ne $urlResult) { return $urlResult }
+  $sw=[Diagnostics.Stopwatch]::StartNew(); $passed=0
+  foreach ($u in @('https://www.google.com/generate_204','https://www.cloudflare.com/cdn-cgi/trace')) {
+    try { Invoke-WebRequest -Uri $u -Method Head -UseBasicParsing -TimeoutSec 4 | Out-Null; $passed++ } catch {}
+  }
   try { Resolve-DnsName -Name 'dns.google' -Type A -Server 8.8.8.8 -ErrorAction Stop | Out-Null; $passed++ } catch {}
   $sw.Stop()
-  if ($passed -ge 2) { return @{online=$true; latency=$sw.ElapsedMilliseconds; reason='Sumber internet jaringan monitoring terdeteksi normal'} }
-  return @{online=$false; latency=$null; reason='Sumber internet jaringan monitoring bermasalah atau tidak stabil'}
+  if ($passed -ge 2) { return @{online=$true; latency=$sw.ElapsedMilliseconds; method='InternetHealth-Fallback'; reason='Internet terdeteksi normal dari jalur monitoring'} }
+  return @{online=$false; latency=$null; method='InternetHealth'; reason='Tidak ada bukti jalur Internet yang berhasil'}
 }
 
 function Get-RuleDiagnosis($asset,$device,$internet,$history) {
@@ -298,7 +363,7 @@ function Set-FirestoreStatus($assetId,$device,$internet,$ai,$consecutiveFail,$co
     latency=@{integerValue=[string]$latencyValue}; checkedAt=@{timestampValue=$checkedAt};
     consecutiveFail=@{integerValue=[string]$consecutiveFail}; consecutiveTrouble=@{integerValue=[string]$consecutiveTrouble};
     method=@{stringValue=[string]$device.method}; reason=@{stringValue=[string]$device.reason}; diagnosis=@{stringValue=[string]$ai.diagnosis}; confidence=@{integerValue=[string]$ai.confidence};
-    nama=@{stringValue=[string]$asset.nama}; kodeAset=@{stringValue=[string]$asset.kodeAset}; lokasi=@{stringValue=[string]$asset.lokasi}; ipAddress=@{stringValue=[string]$asset.ipAddress}
+    nama=@{stringValue=[string]$asset.nama}; kodeAset=@{stringValue=[string]$asset.kodeAset}; lokasi=@{stringValue=[string]$asset.lokasi}; ipAddress=@{stringValue=[string]$asset.ipAddress}; internetIp=@{stringValue=[string]$asset.internetIp}; publicIp=@{stringValue=[string]$asset.publicIp}; ipPublic=@{stringValue=[string]$asset.ipPublic}; ipInternet=@{stringValue=[string]$asset.ipInternet}; internetMethod=@{stringValue=[string]$internet.method}; internetReason=@{stringValue=[string]$internet.reason}
   }
   try {
     $body = (@{fields=$fields}|ConvertTo-Json -Depth 8)
@@ -317,8 +382,8 @@ function Send-WindowsNotification($title, $message, $isWarning=$true) {
     $icon.BalloonTipTitle = $title
     $icon.BalloonTipText = $message
     $icon.BalloonTipIcon = $(if($isWarning){'Warning'}else{'Info'})
-    $icon.ShowBalloonTip(8000)
-    Start-Sleep -Milliseconds 9000
+    $icon.ShowBalloonTip(1500)
+    Start-Sleep -Milliseconds 1800
     $icon.Dispose()
   } catch {}
 }
@@ -353,7 +418,7 @@ while ($true) {
       if ($old -and $old.ContainsKey('consecutiveFail')) { $previousFail = [int]$old.consecutiveFail }
       $consecutiveFail = $previousFail + 1
     }
-    $internet = Get-InternetHealth
+    $internet = Get-InternetHealth $asset
     $ai = Invoke-AIDiagnosis $asset $device $internet $old
     # STATUS PERANGKAT adalah fakta hasil probe agent, bukan hasil AI.
     # AI hanya membantu diagnosis/internet; tidak boleh membalik Online menjadi Offline atau sebaliknya.

@@ -667,12 +667,12 @@ function App() {
     const running = new Set();
 
     const run = async () => {
-      const candidates = assets.filter(a => a?.ipAddress || a?.monitorUrl).slice(0, 80);
+      const candidates = assets.filter(a => a?.ipAddress || a?.monitorUrl || a?.internetIp || a?.publicIp || a?.ipPublic || a?.ipInternet).slice(0, 80);
       for (const asset of candidates) {
         const key = String(asset.kodeAset || asset.id || '');
         if (!key || running.has(key)) continue;
         // Private IPs are probed locally. Public targets remain the cloud monitor's job.
-        if (asset.ipAddress && !isPrivateIPv4(asset.ipAddress) && !asset.monitorUrl) continue;
+        if (asset.ipAddress && !isPrivateIPv4(asset.ipAddress) && !asset.monitorUrl && !asset.internetIp && !asset.publicIp && !asset.ipPublic && !asset.ipInternet) continue;
         running.add(key);
         probeAssetFromBrowser(asset).then(result => {
           running.delete(key);
@@ -681,8 +681,8 @@ function App() {
             assetId: asset.id,
             kodeAset: asset.kodeAset,
             online: result.online === true,
-            internetStatus: navigator.onLine ? 'normal' : 'trouble',
-            internetOnline: navigator.onLine,
+            internetStatus: result.internetStatus || 'unknown',
+            internetOnline: typeof result.internetOnline === 'boolean' ? result.internetOnline : undefined,
             checkedAt: Date.now(),
             source: 'browser-multipath',
             method: result.method,
@@ -695,7 +695,7 @@ function App() {
           });
         });
       }
-      if (!cancelled) timer = setTimeout(run, 20000);
+      if (!cancelled) timer = setTimeout(run, 10000);
     };
     run();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
@@ -1641,18 +1641,26 @@ function getMonitorState(asset, states = {}) {
   return candidates.sort((a,b) => getMonitorCheckedAtMs(b.checkedAt) - getMonitorCheckedAtMs(a.checkedAt))[0];
 }
 
-function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
+function getPreferredMonitorState(asset, agentStates = {}, browserStates = {}) {
   const agent = getMonitorState(asset, agentStates);
   const browser = getMonitorState(asset, browserStates);
-  const st = browser && (!agent || getMonitorCheckedAtMs(browser.checkedAt) >= getMonitorCheckedAtMs(agent.checkedAt)) ? browser : agent;
+  const now = Date.now();
+  const agentAge = agent ? Math.max(0, now - getMonitorCheckedAtMs(agent.checkedAt)) : Infinity;
+  // Agent lokal adalah sumber utama. Browser hanya fallback ketika agent belum ada
+  // atau hasil agent sudah stale, supaya probe browser tidak menimpa status yang benar.
+  if (agent && agentAge <= 30000) return agent;
+  if (browser) return browser;
+  return agent;
+}
+
+function getLiveAssetStatus(asset, agentStates = {}, browserStates = {}) {
+  const st = getPreferredMonitorState(asset, agentStates, browserStates);
   if (!st || typeof st.online !== 'boolean') return 'Menunggu Monitoring';
   return st.online === true ? 'Online' : 'Offline';
 }
 
 function getLiveInternetStatus(asset, agentStates = {}, browserStates = {}) {
-  const agent = getMonitorState(asset, agentStates);
-  const browser = getMonitorState(asset, browserStates);
-  const st = browser && (!agent || getMonitorCheckedAtMs(browser.checkedAt) >= getMonitorCheckedAtMs(agent.checkedAt)) ? browser : agent;
+  const st = getPreferredMonitorState(asset, agentStates, browserStates);
   if (!st) return 'Belum Diperiksa';
   const value = String(st.internetStatus || '').toLowerCase();
   if (value === 'trouble' || st.internetOnline === false) return 'Internet Trouble';
