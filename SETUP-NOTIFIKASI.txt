@@ -1,0 +1,66 @@
+CARA KERJA SEKARANG (TANPA FILE MONITOR YANG HARUS DIJALANKAN MANUAL)
+=======================================================================
+
+Ringkasan alurnya:
+
+  1. Dashboard web (yang sudah ada) tetap mengecek status aset secara
+     otomatis SELAMA dibuka di browser - ini sudah jalan dari awal,
+     tidak ada yang perlu kamu ubah di sini. Status hasil pengecekan itu
+     disimpan ke Firestore.
+
+  2. Setiap 5 menit, GitHub Actions (server milik GitHub, gratis, jalan
+     terus tanpa kamu sentuh) otomatis memanggil endpoint
+     /api/monitor di website kamu.
+
+  3. Endpoint itu membaca status terakhir di Firestore, dan kalau ada
+     yang bermasalah (mati / internet trouble / tidak ada laporan
+     terbaru), dia mengirim notifikasi push nyata ke semua HP/laptop
+     yang sudah pernah menginstall & mengizinkan notifikasi di
+     aplikasi ini - notifikasi ini akan muncul walau aplikasinya lagi
+     tertutup total.
+
+Yang TIDAK ada lagi: tidak ada file monitor.py, tidak ada program yang
+perlu kamu buka/jalankan di PC manapun.
+
+BATAS YANG PERLU KAMU TAHU (jujur, bukan basa-basi):
+Endpoint di atas hanya MENERUSKAN status yang SUDAH tersimpan di
+Firestore - dia sendiri tidak bisa mengecek langsung ke IP privat di
+jaringan kantor dari server Vercel, karena secara jaringan itu memang
+tidak bisa dijangkau dari luar (ini bukan keterbatasan software, tapi
+memang begitu cara kerja internet/jaringan privat). Supaya datanya
+tetap akurat, tetap perlu ADA browser dashboard yang sesekali terbuka
+di jaringan yang sama dengan aset-asetnya (misalnya dashboard dibuka
+di 1 PC/tablet kantor, dibiarkan menyala sebagai layar pemantauan) -
+ini cukup DENGAN MEMBUKA WEBSITE, bukan menjalankan file terpisah.
+
+SETUP (dilakukan sekali saja):
+
+1. Ambil Service Account Key:
+   - Firebase Console > pilih project > ikon gear > Project Settings
+   - Tab "Service Accounts" > Generate new private key > file .json
+     akan terdownload.
+
+2. Di Vercel (project ini sudah/akan di-deploy ke Vercel):
+   - Buka Project Settings > Environment Variables
+   - Tambah FIREBASE_SERVICE_ACCOUNT = isi seluruh JSON dari langkah 1
+   - Tambah CRON_SECRET = buat string acak panjang sendiri (boleh pakai
+     generator password online, minimal 32 karakter)
+   - Redeploy project setelah menambah env vars ini.
+
+3. Di GitHub (repo project ini):
+   - Settings > Secrets and variables > Actions > New repository secret
+   - Tambah CRON_SECRET = SAMA PERSIS dengan yang di Vercel langkah 2
+   - Tambah MONITOR_URL = https://domain-website-kamu.vercel.app/api/monitor
+   - File .github/workflows/monitor-cron.yml sudah disediakan, otomatis
+     akan mulai jalan tiap 5 menit setelah secrets ini diisi & di-push
+     ke GitHub.
+
+4. Buka website-nya sekali di HP/laptop, izinkan saat diminta izin
+   notifikasi (browser akan menampilkan dialog izin). Kalau mau, install
+   sebagai app (tombol "Install app" / "Add to Home Screen") supaya
+   notifikasi tetap muncul walau aplikasinya ditutup.
+
+Selesai - setelah setup ini, tidak ada lagi yang perlu dijalankan
+manual. Cukup buka website sesekali (terutama dari jaringan kantor)
+supaya datanya tetap segar, dan notifikasi akan otomatis muncul kalau
+ada masalah.

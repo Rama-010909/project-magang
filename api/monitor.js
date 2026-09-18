@@ -1,97 +1,167 @@
-import { probeAsset } from '../lib/cloud-monitor.mjs';
+/**
+ * Serverless Monitor & Push Notification API (Gratis - Vercel Hobby + Firebase Spark)
+ * ---------------------------------------------------------------------------------
+ * Pakai Firebase Admin SDK (bukan REST publik) untuk baca/tulis Firestore, karena
+ * security rules project ini (FIRESTORE-RULES-FINAL.txt) mewajibkan request.auth
+ * != null untuk semua akses. Admin SDK berjalan dengan privilese server dan
+ * otomatis melewati rules tsb (ini aman, karena kredensialnya cuma dipegang oleh
+ * server Vercel, bukan disebar ke browser).
+ *
+ * 2 MODE:
+ * 1. MODE BACA (tanpa header rahasia) - dipanggil bebas oleh website/PWA (mis.
+ *    dari Periodic Background Sync di firebase-messaging-sw.js). Cuma
+ *    mengembalikan ringkasan status, TIDAK mengirim push.
+ * 2. MODE KIRIM PUSH (header Authorization: Bearer <CRON_SECRET> cocok) -
+ *    dipanggil otomatis oleh GitHub Actions setiap 5 menit (lihat
+ *    .github/workflows/monitor-cron.yml). Mengirim notifikasi FCM nyata ke
+ *    semua device di collection "notificationTokens" - INI YANG BIKIN
+ *    NOTIFIKASI MUNCUL DI HP/LAPTOP WALAU APLIKASINYA TERTUTUP.
+ *
+ * PENTING - batas yang tidak bisa dihilangkan: endpoint ini hanya MEMBACA &
+ * MENERUSKAN status yang sudah tersimpan di Firestore. Ia TIDAK bisa
+ * mengecek langsung IP privat di jaringan kantor dari server Vercel (secara
+ * jaringan itu tidak bisa dijangkau dari luar). Data yang diteruskan hanya
+ * akan akurat kalau dashboard sesekali dibuka di jaringan yang sama dengan
+ * aset-asetnya (itulah yang benar-benar menulis status ke Firestore).
+ *
+ * ENV VARS (isi di Vercel Project Settings > Environment Variables):
+ *   - FIREBASE_SERVICE_ACCOUNT : seluruh isi JSON service account (Firebase
+ *     Console > Project Settings > Service Accounts > Generate new private
+ *     key) sebagai satu string.
+ *   - CRON_SECRET : string acak panjang, harus SAMA dengan secret
+ *     CRON_SECRET di GitHub Actions.
+ */
 
-export const config = { runtime: 'nodejs' };
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 
-const PROJECT_ID = 'it-asset-diskominfo-batang';
-const API_KEY = 'AIzaSyCnybMKpM7Z5gWn49hIsd5ymhFVSVtEuoo';
+const STALE_MS = 45 * 1000;
+const RENOTIFY_MS = 15 * 60 * 1000; // jangan kirim ulang alert yang sama dalam 15 menit
 
-function authorized(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${secret}` || req.headers['x-monitor-secret'] === secret;
+function getAdminApp() {
+  if (getApps().length) return getApps()[0];
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT env var belum diisi di Vercel.');
+  return initializeApp({ credential: cert(JSON.parse(raw)) });
 }
 
-function parseFields(fields = {}) {
-  const out = {};
-  for (const [k, v] of Object.entries(fields)) {
-    if ('stringValue' in v) out[k] = v.stringValue;
-    else if ('booleanValue' in v) out[k] = v.booleanValue;
-    else if ('integerValue' in v) out[k] = Number(v.integerValue);
-    else if ('doubleValue' in v) out[k] = Number(v.doubleValue);
-    else if ('timestampValue' in v) out[k] = v.timestampValue;
-    else if ('nullValue' in v) out[k] = null;
-    else if ('arrayValue' in v) out[k] = (v.arrayValue?.values || []).map(x => parseFields({x}).x);
-    else if ('mapValue' in v) out[k] = parseFields(v.mapValue?.fields || {});
-  }
-  return out;
+function toMillis(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === 'function') return v.toMillis();
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : 0;
 }
 
-function toValue(v) {
-  if (v === null || v === undefined) return { nullValue: null };
-  if (typeof v === 'string') return { stringValue: v };
-  if (typeof v === 'boolean') return { booleanValue: v };
-  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
-  if (v instanceof Date) return { timestampValue: v.toISOString() };
-  if (Array.isArray(v)) return { arrayValue: { values: v.map(toValue) } };
-  if (typeof v === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, toValue(x)])) } };
-  return { stringValue: String(v) };
+function isStale(st) {
+  return (Date.now() - toMillis(st.checkedAt)) > STALE_MS;
 }
 
-async function getAnonToken() {
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(API_KEY)}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true })
+function computeAlerts(monitorStatuses) {
+  const alerts = [];
+  const summary = { totalMonitored: monitorStatuses.length, onlineNormal: 0, offlineMati: 0, internetTrouble: 0, dataBasi: 0 };
+
+  monitorStatuses.forEach(st => {
+    const stale = isStale(st);
+    const isMati = st.online === false || st.deviceStatus === 'Mati' || st.status === 'offline';
+    const isTrouble = st.online === true && !stale && (st.internetStatus === 'Internet Trouble' || st.internetOnline === false);
+    const isNormal = st.online === true && !stale && (st.internetStatus === 'Normal' || st.internetOnline === true);
+
+    if (stale && !isMati) {
+      summary.dataBasi++;
+      alerts.push({ id: st.id, nama: st.nama || st.kodeAset || 'Perangkat', type: 'stale', status: 'Tidak Ada Laporan Terbaru', reason: 'Belum ada update status baru dalam 45 detik terakhir' });
+    } else if (isMati) {
+      summary.offlineMati++;
+      alerts.push({ id: st.id, nama: st.nama || st.kodeAset || 'Perangkat', type: 'mati', status: 'Perangkat Mati / Offline', reason: st.reason || 'Tidak merespons jaringan' });
+    } else if (isTrouble) {
+      summary.internetTrouble++;
+      alerts.push({ id: st.id, nama: st.nama || st.kodeAset || 'Perangkat', type: 'trouble', status: 'Internet Trouble', reason: st.internetReason || st.reason || 'Koneksi WAN terputus' });
+    } else if (isNormal) {
+      summary.onlineNormal++;
+    }
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data?.error?.message || 'Anonymous Firebase Auth gagal. Aktifkan Anonymous sign-in di Firebase Authentication.');
-  return data.idToken;
+
+  return { alerts, summary };
 }
 
-async function firestoreFetch(path, token, options = {}) {
-  const r = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${path}`, {
-    ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+async function sendPushForAlerts(db, alerts) {
+  if (alerts.length === 0) return { sent: 0, skippedDebounced: 0 };
+
+  const now = Date.now();
+  const stateRefs = alerts.map(a => db.collection('notificationState').doc(`${a.id}_${a.type}`));
+  const stateSnaps = await db.getAll(...stateRefs);
+
+  const toSend = alerts.filter((a, i) => {
+    const data = stateSnaps[i].data();
+    const last = data ? toMillis(data.lastNotifiedAt) : 0;
+    return (now - last) > RENOTIFY_MS;
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data?.error?.message || `Firestore request failed: ${r.status}`);
-  return data;
-}
+  if (toSend.length === 0) return { sent: 0, skippedDebounced: alerts.length };
 
-async function runMonitor() {
-  const token = await getAnonToken();
-  const data = await firestoreFetch('assets?pageSize=1000', token);
-  const assets = (data.documents || []).map(doc => ({ id: doc.name.split('/').pop(), ...parseFields(doc.fields || {}) }));
-  const results = [];
-  const checkedAt = new Date();
+  const tokenDocs = await db.collection('notificationTokens').get();
+  const tokens = [...new Set(tokenDocs.docs.map(d => d.data().token).filter(Boolean))];
+  if (tokens.length === 0) return { sent: 0, skippedDebounced: alerts.length - toSend.length, noTokens: true };
 
-  for (let i = 0; i < assets.length; i += 10) {
-    const batch = assets.slice(i, i + 10);
-    await Promise.all(batch.map(async asset => {
-      const probe = await probeAsset(asset);
-      const body = { fields: {
-        assetId: toValue(asset.id),
-        kodeAset: toValue(String(asset.kodeAset || '')),
-        nama: toValue(String(asset.nama || asset.name || '')),
-        online: toValue(!!probe.online),
-        status: toValue(probe.online ? 'online' : 'offline'),
-        deviceStatus: toValue(probe.online ? 'Online' : 'Offline'),
-        internetStatus: toValue(probe.online ? 'Normal' : 'Belum Diperiksa'),
-        reason: toValue(String(probe.reason || '')),
-        method: toValue(String(probe.method || '')),
-        latency: toValue(Number(probe.latency || 0)),
-        port: toValue(probe.port || null),
-        checkedAt: toValue(checkedAt),
-        source: toValue('cloud-monitor-free')
-      }};
-      await firestoreFetch(`monitorStatus/${encodeURIComponent(asset.id)}`, token, { method: 'PATCH', body: JSON.stringify(body) });
-      results.push({ assetId: asset.id, online: !!probe.online, reason: probe.reason });
-    }));
+  const messaging = getMessaging();
+  let sent = 0;
+
+  for (const alert of toSend) {
+    const message = {
+      tokens,
+      notification: {
+        title: alert.type === 'mati' ? '🚨 Perangkat Mati Terdeteksi'
+          : alert.type === 'trouble' ? '⚠️ Internet Trouble'
+          : '⏳ Tidak Ada Laporan Terbaru',
+        body: `${alert.nama}: ${alert.reason}`
+      },
+      data: { assetId: String(alert.id), status: alert.status, url: '/#monitor' }
+    };
+    try {
+      await messaging.sendEachForMulticast(message);
+      sent++;
+      await db.collection('notificationState').doc(`${alert.id}_${alert.type}`)
+        .set({ lastNotifiedAt: FieldValue.serverTimestamp() }, { merge: true });
+    } catch (err) {
+      console.error('Gagal kirim push untuk', alert.id, err.message);
+    }
   }
-  return { checked: assets.length, online: results.filter(x => x.online).length, offline: results.filter(x => !x.online).length, checkedAt: checkedAt.toISOString() };
+  return { sent, skippedDebounced: alerts.length - toSend.length };
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
-  if (!authorized(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  try { return res.status(200).json({ ok: true, ...(await runMonitor()) }); }
-  catch (e) { console.error(e); return res.status(500).json({ ok: false, error: String(e?.message || e) }); }
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    getAdminApp();
+    const db = getFirestore();
+
+    const statusSnap = await db.collection('monitorStatus').get();
+    const monitorStatuses = statusSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const { alerts, summary } = computeAlerts(monitorStatuses);
+
+    const authHeader = req.headers.authorization || '';
+    const isTrustedCaller = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+
+    let pushResult = null;
+    if (isTrustedCaller) {
+      pushResult = await sendPushForAlerts(db, alerts);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      summary,
+      alerts,
+      pushResult,
+      message: alerts.length > 0
+        ? `Terdeteksi ${alerts.length} masalah pada infrastruktur TI Diskominfo.`
+        : 'Seluruh perangkat terpantau normal dan aktif.'
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message || 'Internal Server Error' });
+  }
 }
