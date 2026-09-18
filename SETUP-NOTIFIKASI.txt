@@ -4,63 +4,88 @@ CARA KERJA SEKARANG (TANPA FILE MONITOR YANG HARUS DIJALANKAN MANUAL)
 Ringkasan alurnya:
 
   1. Dashboard web (yang sudah ada) tetap mengecek status aset secara
-     otomatis SELAMA dibuka di browser - ini sudah jalan dari awal,
-     tidak ada yang perlu kamu ubah di sini. Status hasil pengecekan itu
-     disimpan ke Firestore.
+     otomatis SELAMA dibuka di browser di jaringan yang sama dengan aset.
+     Status hasil pengecekan disimpan ke Firestore (monitorStatus + assets).
 
-  2. Setiap 5 menit, GitHub Actions (server milik GitHub, gratis, jalan
-     terus tanpa kamu sentuh) otomatis memanggil endpoint
-     /api/monitor di website kamu.
+  2. Setiap 5 menit, GitHub Actions memanggil endpoint /api/monitor.
 
-  3. Endpoint itu membaca status terakhir di Firestore, dan kalau ada
-     yang bermasalah (mati / internet trouble / tidak ada laporan
-     terbaru), dia mengirim notifikasi push nyata ke semua HP/laptop
-     yang sudah pernah menginstall & mengizinkan notifikasi di
-     aplikasi ini - notifikasi ini akan muncul walau aplikasinya lagi
-     tertutup total.
+  3. Endpoint itu:
+     - Membaca status terakhir di Firestore
+     - MENYINKRONKAN status Offline/Online ke Data Aset & Dashboard
+     - Kalau ada masalah (mati / internet trouble / data basi) DAN
+       dipanggil dengan CRON_SECRET, mengirim notifikasi push FCM
 
-Yang TIDAK ada lagi: tidak ada file monitor.py, tidak ada program yang
-perlu kamu buka/jalankan di PC manapun.
+PERBAIKAN TERBARU:
+  - Status di halaman Monitoring, Dashboard, dan Data Aset sekarang
+    SINKRON. Saat perangkat mati → status jadi "Offline" di semua tempat.
+    Saat kembali online → status kembali "Aktif".
+  - Token FCM yang invalid otomatis dibersihkan.
+  - Field baru di assets: statusLive, lastMonitorAt, lastMonitorReason.
 
-BATAS YANG PERLU KAMU TAHU (jujur, bukan basa-basi):
-Endpoint di atas hanya MENERUSKAN status yang SUDAH tersimpan di
-Firestore - dia sendiri tidak bisa mengecek langsung ke IP privat di
-jaringan kantor dari server Vercel, karena secara jaringan itu memang
-tidak bisa dijangkau dari luar (ini bukan keterbatasan software, tapi
-memang begitu cara kerja internet/jaringan privat). Supaya datanya
-tetap akurat, tetap perlu ADA browser dashboard yang sesekali terbuka
-di jaringan yang sama dengan aset-asetnya (misalnya dashboard dibuka
-di 1 PC/tablet kantor, dibiarkan menyala sebagai layar pemantauan) -
-ini cukup DENGAN MEMBUKA WEBSITE, bukan menjalankan file terpisah.
+BATAS JARINGAN (tetap berlaku):
+  Endpoint di Vercel TIDAK bisa ping IP privat kantor dari internet.
+  Supaya data akurat, tetap perlu ADA browser dashboard yang sesekali
+  terbuka di jaringan yang sama dengan aset (cukup buka website, bukan
+  jalankan file terpisah).
 
-SETUP (dilakukan sekali saja):
+=======================================================================
+SETUP (dilakukan sekali saja)
+=======================================================================
 
-1. Ambil Service Account Key:
-   - Firebase Console > pilih project > ikon gear > Project Settings
-   - Tab "Service Accounts" > Generate new private key > file .json
-     akan terdownload.
+1. Service Account Key:
+   - Firebase Console > Project Settings > Service Accounts
+   - Generate new private key → file .json terdownload
 
-2. Di Vercel (project ini sudah/akan di-deploy ke Vercel):
-   - Buka Project Settings > Environment Variables
-   - Tambah FIREBASE_SERVICE_ACCOUNT = isi seluruh JSON dari langkah 1
-   - Tambah CRON_SECRET = buat string acak panjang sendiri (boleh pakai
-     generator password online, minimal 32 karakter)
-   - Redeploy project setelah menambah env vars ini.
+2. Vercel (Project Settings > Environment Variables):
+   - FIREBASE_SERVICE_ACCOUNT = seluruh isi JSON langkah 1
+   - CRON_SECRET = string acak panjang (min 32 karakter)
+   - Redeploy setelah menambah env vars
 
-3. Di GitHub (repo project ini):
-   - Settings > Secrets and variables > Actions > New repository secret
-   - Tambah CRON_SECRET = SAMA PERSIS dengan yang di Vercel langkah 2
-   - Tambah MONITOR_URL = https://domain-website-kamu.vercel.app/api/monitor
-   - File .github/workflows/monitor-cron.yml sudah disediakan, otomatis
-     akan mulai jalan tiap 5 menit setelah secrets ini diisi & di-push
-     ke GitHub.
+3. GitHub (repo Settings > Secrets and variables > Actions):
+   - CRON_SECRET = SAMA PERSIS dengan di Vercel
+   - MONITOR_URL = https://domain-kamu.vercel.app/api/monitor
+   - Workflow monitor-cron.yml otomatis jalan tiap 5 menit setelah push
 
-4. Buka website-nya sekali di HP/laptop, izinkan saat diminta izin
-   notifikasi (browser akan menampilkan dialog izin). Kalau mau, install
-   sebagai app (tombol "Install app" / "Add to Home Screen") supaya
-   notifikasi tetap muncul walau aplikasinya ditutup.
+4. Izinkan notifikasi:
+   - Buka website di HP/laptop
+   - Izinkan saat diminta permission notifikasi
+   - (Opsional) Install sebagai app / Add to Home Screen
 
-Selesai - setelah setup ini, tidak ada lagi yang perlu dijalankan
-manual. Cukup buka website sesekali (terutama dari jaringan kantor)
-supaya datanya tetap segar, dan notifikasi akan otomatis muncul kalau
-ada masalah.
+=======================================================================
+TROUBLESHOOTING NOTIFIKASI TIDAK MUNCUL
+=======================================================================
+
+A. Cek GitHub Actions
+   - Buka repo > tab Actions > "IT Asset Monitor - Auto Notifikasi"
+   - Harus ada run tiap ~5 menit. Kalau gagal, buka log curl-nya.
+
+B. Cek secrets
+   - CRON_SECRET di GitHub = CRON_SECRET di Vercel (huruf besar/kecil sama)
+   - MONITOR_URL benar (harus berakhiran /api/monitor)
+
+C. Cek token notifikasi di Firestore
+   - Collection notificationTokens harus ada dokumen berisi field "token"
+   - Kalau kosong: buka website lagi, izinkan notifikasi
+
+D. Debounce 15 menit
+   - Alert yang sama tidak dikirim ulang dalam 15 menit
+   - Untuk tes: matikan perangkat, tunggu cron, atau jalankan workflow
+     manual (Actions > Run workflow)
+
+E. Dashboard harus terbuka di jaringan kantor
+   - Tanpa probe dari browser, data monitorStatus basi
+   - Biarkan 1 PC/tablet di kantor membuka website sebagai layar pantau
+
+F. Tes manual endpoint (dari PC):
+   curl -sS "https://domain-kamu.vercel.app/api/monitor" \
+     -H "Authorization: Bearer ISI_CRON_SECRET_DISINI"
+   - Lihat JSON: summary, alerts, syncResult, pushResult
+   - pushResult.noTokens=true → belum ada token
+   - pushResult.sent>0 → notifikasi terkirim
+
+=======================================================================
+SELESAI
+=======================================================================
+Setelah setup, tidak ada yang perlu dijalankan manual.
+Cukup buka website sesekali dari jaringan kantor, dan notifikasi
+otomatis muncul kalau ada perangkat mati / internet trouble.

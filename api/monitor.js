@@ -1,35 +1,19 @@
 /**
  * Serverless Monitor & Push Notification API (Gratis - Vercel Hobby + Firebase Spark)
  * ---------------------------------------------------------------------------------
- * Pakai Firebase Admin SDK (bukan REST publik) untuk baca/tulis Firestore, karena
- * security rules project ini (FIRESTORE-RULES-FINAL.txt) mewajibkan request.auth
- * != null untuk semua akses. Admin SDK berjalan dengan privilese server dan
- * otomatis melewati rules tsb (ini aman, karena kredensialnya cuma dipegang oleh
- * server Vercel, bukan disebar ke browser).
+ * Pakai Firebase Admin SDK untuk baca/tulis Firestore (melewati security rules).
  *
  * 2 MODE:
- * 1. MODE BACA (tanpa header rahasia) - dipanggil bebas oleh website/PWA (mis.
- *    dari Periodic Background Sync di firebase-messaging-sw.js). Cuma
- *    mengembalikan ringkasan status, TIDAK mengirim push.
- * 2. MODE KIRIM PUSH (header Authorization: Bearer <CRON_SECRET> cocok) -
- *    dipanggil otomatis oleh GitHub Actions setiap 5 menit (lihat
- *    .github/workflows/monitor-cron.yml). Mengirim notifikasi FCM nyata ke
- *    semua device di collection "notificationTokens" - INI YANG BIKIN
- *    NOTIFIKASI MUNCUL DI HP/LAPTOP WALAU APLIKASINYA TERTUTUP.
+ * 1. MODE BACA (tanpa header rahasia) - ringkasan status, TIDAK kirim push.
+ * 2. MODE KIRIM PUSH (Authorization: Bearer <CRON_SECRET>) - GitHub Actions tiap 5 menit.
  *
- * PENTING - batas yang tidak bisa dihilangkan: endpoint ini hanya MEMBACA &
- * MENERUSKAN status yang sudah tersimpan di Firestore. Ia TIDAK bisa
- * mengecek langsung IP privat di jaringan kantor dari server Vercel (secara
- * jaringan itu tidak bisa dijangkau dari luar). Data yang diteruskan hanya
- * akan akurat kalau dashboard sesekali dibuka di jaringan yang sama dengan
- * aset-asetnya (itulah yang benar-benar menulis status ke Firestore).
+ * PERBAIKAN:
+ * - Saat offline/mati, collection "assets" ikut di-update (status + statusLive)
+ *   supaya Dashboard & Data Aset sinkron dengan halaman Monitoring.
+ * - Saat kembali online, status di-restore ke Aktif.
+ * - Token FCM invalid otomatis dibersihkan.
  *
- * ENV VARS (isi di Vercel Project Settings > Environment Variables):
- *   - FIREBASE_SERVICE_ACCOUNT : seluruh isi JSON service account (Firebase
- *     Console > Project Settings > Service Accounts > Generate new private
- *     key) sebagai satu string.
- *   - CRON_SECRET : string acak panjang, harus SAMA dengan secret
- *     CRON_SECRET di GitHub Actions.
+ * ENV: FIREBASE_SERVICE_ACCOUNT, CRON_SECRET
  */
 
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
@@ -37,7 +21,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 
 const STALE_MS = 45 * 1000;
-const RENOTIFY_MS = 15 * 60 * 1000; // jangan kirim ulang alert yang sama dalam 15 menit
+const RENOTIFY_MS = 15 * 60 * 1000;
 
 function getAdminApp() {
   if (getApps().length) return getApps()[0];
@@ -49,6 +33,9 @@ function getAdminApp() {
 function toMillis(v) {
   if (!v) return 0;
   if (typeof v.toMillis === 'function') return v.toMillis();
+  if (typeof v === 'object' && typeof v.seconds === 'number') {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : 0;
 }
@@ -57,25 +44,64 @@ function isStale(st) {
   return (Date.now() - toMillis(st.checkedAt)) > STALE_MS;
 }
 
+function isMatiStatus(st) {
+  return (
+    st.online === false ||
+    st.deviceStatus === 'Mati' ||
+    st.status === 'offline' ||
+    String(st.deviceStatus || '').toLowerCase() === 'offline'
+  );
+}
+
 function computeAlerts(monitorStatuses) {
   const alerts = [];
-  const summary = { totalMonitored: monitorStatuses.length, onlineNormal: 0, offlineMati: 0, internetTrouble: 0, dataBasi: 0 };
+  const summary = {
+    totalMonitored: monitorStatuses.length,
+    onlineNormal: 0,
+    offlineMati: 0,
+    internetTrouble: 0,
+    dataBasi: 0
+  };
 
   monitorStatuses.forEach(st => {
     const stale = isStale(st);
-    const isMati = st.online === false || st.deviceStatus === 'Mati' || st.status === 'offline';
-    const isTrouble = st.online === true && !stale && (st.internetStatus === 'Internet Trouble' || st.internetOnline === false);
-    const isNormal = st.online === true && !stale && (st.internetStatus === 'Normal' || st.internetOnline === true);
+    const isMati = isMatiStatus(st);
+    const isTrouble =
+      st.online === true &&
+      !stale &&
+      (st.internetStatus === 'Internet Trouble' || st.internetOnline === false);
+    const isNormal =
+      st.online === true &&
+      !stale &&
+      (st.internetStatus === 'Normal' || st.internetOnline === true);
 
     if (stale && !isMati) {
       summary.dataBasi++;
-      alerts.push({ id: st.id, nama: st.nama || st.kodeAset || 'Perangkat', type: 'stale', status: 'Tidak Ada Laporan Terbaru', reason: 'Belum ada update status baru dalam 45 detik terakhir' });
+      alerts.push({
+        id: st.id,
+        nama: st.nama || st.kodeAset || 'Perangkat',
+        type: 'stale',
+        status: 'Tidak Ada Laporan Terbaru',
+        reason: 'Belum ada update status baru dalam 45 detik terakhir'
+      });
     } else if (isMati) {
       summary.offlineMati++;
-      alerts.push({ id: st.id, nama: st.nama || st.kodeAset || 'Perangkat', type: 'mati', status: 'Perangkat Mati / Offline', reason: st.reason || 'Tidak merespons jaringan' });
+      alerts.push({
+        id: st.id,
+        nama: st.nama || st.kodeAset || 'Perangkat',
+        type: 'mati',
+        status: 'Perangkat Mati / Offline',
+        reason: st.reason || 'Tidak merespons jaringan'
+      });
     } else if (isTrouble) {
       summary.internetTrouble++;
-      alerts.push({ id: st.id, nama: st.nama || st.kodeAset || 'Perangkat', type: 'trouble', status: 'Internet Trouble', reason: st.internetReason || st.reason || 'Koneksi WAN terputus' });
+      alerts.push({
+        id: st.id,
+        nama: st.nama || st.kodeAset || 'Perangkat',
+        type: 'trouble',
+        status: 'Internet Trouble',
+        reason: st.internetReason || st.reason || 'Koneksi WAN terputus'
+      });
     } else if (isNormal) {
       summary.onlineNormal++;
     }
@@ -84,48 +110,157 @@ function computeAlerts(monitorStatuses) {
   return { alerts, summary };
 }
 
+/**
+ * Sinkronkan status live ke dokumen assets supaya Dashboard & Data Aset
+ * menampilkan Offline/Online yang sama dengan halaman Monitoring.
+ */
+async function syncAssetsStatus(db, monitorStatuses) {
+  const batch = db.batch();
+  let ops = 0;
+  const now = FieldValue.serverTimestamp();
+
+  for (const st of monitorStatuses) {
+    if (!st.id) continue;
+    const stale = isStale(st);
+    const isMati = isMatiStatus(st);
+    const isOnline = st.online === true && !stale;
+    const isTrouble =
+      isOnline &&
+      (st.internetStatus === 'Internet Trouble' || st.internetOnline === false);
+
+    const patch = {
+      lastMonitorAt: now,
+      lastMonitorReason: st.reason || '',
+      lastMonitorSource: st.source || 'monitor-api'
+    };
+
+    if (isMati) {
+      patch.status = 'Offline';
+      patch.statusLive = 'Offline';
+      patch.online = false;
+    } else if (isTrouble) {
+      patch.statusLive = 'Online';
+      patch.online = true;
+      patch.internetStatus = 'Internet Trouble';
+      if (st.status === 'Offline') patch.status = 'Aktif';
+    } else if (isOnline) {
+      patch.statusLive = 'Online';
+      patch.online = true;
+      patch.internetStatus = st.internetStatus || 'Normal';
+      patch.status = 'Aktif';
+    } else if (stale) {
+      patch.statusLive = 'Tidak Terjangkau';
+    } else {
+      continue;
+    }
+
+    const ref = db.collection('assets').doc(String(st.id));
+    batch.set(ref, patch, { merge: true });
+    ops++;
+    if (ops >= 450) break;
+  }
+
+  if (ops > 0) await batch.commit();
+  return { synced: ops };
+}
+
 async function sendPushForAlerts(db, alerts) {
   if (alerts.length === 0) return { sent: 0, skippedDebounced: 0 };
 
   const now = Date.now();
-  const stateRefs = alerts.map(a => db.collection('notificationState').doc(`${a.id}_${a.type}`));
+  const stateRefs = alerts.map(a =>
+    db.collection('notificationState').doc(`${a.id}_${a.type}`)
+  );
   const stateSnaps = await db.getAll(...stateRefs);
 
   const toSend = alerts.filter((a, i) => {
     const data = stateSnaps[i].data();
     const last = data ? toMillis(data.lastNotifiedAt) : 0;
-    return (now - last) > RENOTIFY_MS;
+    return now - last > RENOTIFY_MS;
   });
-  if (toSend.length === 0) return { sent: 0, skippedDebounced: alerts.length };
+  if (toSend.length === 0) {
+    return { sent: 0, skippedDebounced: alerts.length };
+  }
 
   const tokenDocs = await db.collection('notificationTokens').get();
-  const tokens = [...new Set(tokenDocs.docs.map(d => d.data().token).filter(Boolean))];
-  if (tokens.length === 0) return { sent: 0, skippedDebounced: alerts.length - toSend.length, noTokens: true };
+  const tokens = [
+    ...new Set(tokenDocs.docs.map(d => d.data().token).filter(Boolean))
+  ];
+  if (tokens.length === 0) {
+    return {
+      sent: 0,
+      skippedDebounced: alerts.length - toSend.length,
+      noTokens: true
+    };
+  }
 
   const messaging = getMessaging();
   let sent = 0;
+  const failures = [];
 
   for (const alert of toSend) {
     const message = {
       tokens,
       notification: {
-        title: alert.type === 'mati' ? '🚨 Perangkat Mati Terdeteksi'
-          : alert.type === 'trouble' ? '⚠️ Internet Trouble'
-          : '⏳ Tidak Ada Laporan Terbaru',
+        title:
+          alert.type === 'mati'
+            ? '🚨 Perangkat Mati Terdeteksi'
+            : alert.type === 'trouble'
+              ? '⚠️ Internet Trouble'
+              : '⏳ Tidak Ada Laporan Terbaru',
         body: `${alert.nama}: ${alert.reason}`
       },
-      data: { assetId: String(alert.id), status: alert.status, url: '/#monitor' }
+      data: {
+        assetId: String(alert.id),
+        status: alert.status,
+        url: '/#monitor'
+      },
+      webpush: {
+        fcmOptions: { link: '/#monitor' },
+        notification: {
+          requireInteraction: alert.type === 'mati',
+          tag: `asset-${alert.id}-${alert.type}`
+        }
+      }
     };
     try {
-      await messaging.sendEachForMulticast(message);
+      const result = await messaging.sendEachForMulticast(message);
       sent++;
-      await db.collection('notificationState').doc(`${alert.id}_${alert.type}`)
+      await db
+        .collection('notificationState')
+        .doc(`${alert.id}_${alert.type}`)
         .set({ lastNotifiedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+      if (result.failureCount > 0) {
+        const invalid = [];
+        result.responses.forEach((r, i) => {
+          if (
+            !r.success &&
+            r.error &&
+            (r.error.code === 'messaging/registration-token-not-registered' ||
+              r.error.code === 'messaging/invalid-registration-token')
+          ) {
+            invalid.push(tokens[i]);
+          }
+        });
+        for (const tok of invalid) {
+          const q = await db
+            .collection('notificationTokens')
+            .where('token', '==', tok)
+            .get();
+          for (const d of q.docs) await d.ref.delete();
+        }
+      }
     } catch (err) {
       console.error('Gagal kirim push untuk', alert.id, err.message);
+      failures.push({ id: alert.id, error: err.message });
     }
   }
-  return { sent, skippedDebounced: alerts.length - toSend.length };
+  return {
+    sent,
+    skippedDebounced: alerts.length - toSend.length,
+    failures: failures.length ? failures : undefined
+  };
 }
 
 export default async function handler(req, res) {
@@ -140,11 +275,24 @@ export default async function handler(req, res) {
     const db = getFirestore();
 
     const statusSnap = await db.collection('monitorStatus').get();
-    const monitorStatuses = statusSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const monitorStatuses = statusSnap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }));
     const { alerts, summary } = computeAlerts(monitorStatuses);
 
     const authHeader = req.headers.authorization || '';
-    const isTrustedCaller = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    const isTrustedCaller =
+      !!process.env.CRON_SECRET &&
+      authHeader === `Bearer ${process.env.CRON_SECRET}`;
+
+    let syncResult = null;
+    try {
+      syncResult = await syncAssetsStatus(db, monitorStatuses);
+    } catch (syncErr) {
+      console.error('Gagal sync assets status:', syncErr.message);
+      syncResult = { synced: 0, error: syncErr.message };
+    }
 
     let pushResult = null;
     if (isTrustedCaller) {
@@ -156,12 +304,16 @@ export default async function handler(req, res) {
       timestamp: new Date().toISOString(),
       summary,
       alerts,
+      syncResult,
       pushResult,
-      message: alerts.length > 0
-        ? `Terdeteksi ${alerts.length} masalah pada infrastruktur TI Diskominfo.`
-        : 'Seluruh perangkat terpantau normal dan aktif.'
+      message:
+        alerts.length > 0
+          ? `Terdeteksi ${alerts.length} masalah pada infrastruktur TI. Status aset sudah disinkronkan.`
+          : 'Seluruh perangkat terpantau normal dan aktif.'
     });
   } catch (error) {
-    return res.status(500).json({ ok: false, error: error.message || 'Internal Server Error' });
+    return res
+      .status(500)
+      .json({ ok: false, error: error.message || 'Internal Server Error' });
   }
 }
