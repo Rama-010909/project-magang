@@ -2,6 +2,10 @@
   "name": "it-asset-monitoring",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "echo 'Build sudah ada di folder dist — skip compile'",
+    "vercel-build": "echo 'Build sudah ada di folder dist — skip compile'"
+  },
   "dependencies": {
     "firebase-admin": "^12.6.0"
   }
