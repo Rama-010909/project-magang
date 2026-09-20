@@ -45,6 +45,12 @@ function isStale(st) {
 }
 
 function isMatiStatus(st) {
+  // Internet Trouble berarti perangkat masih hidup & terjangkau
+  const net = String(st.internetStatus || '').toLowerCase();
+  const stt = String(st.status || '').toLowerCase();
+  if (net.includes('internet trouble') || stt === 'trouble') return false;
+  if (st.online === true) return false;
+  if (String(st.deviceStatus || '') === 'Online') return false;
   return (
     st.online === false ||
     st.deviceStatus === 'Mati' ||
@@ -65,12 +71,18 @@ function computeAlerts(monitorStatuses) {
 
   monitorStatuses.forEach(st => {
     const stale = isStale(st);
+    const net = String(st.internetStatus || '').toLowerCase();
+    const stt = String(st.status || '').toLowerCase();
+    if (net.includes('internet trouble') || stt === 'trouble') {
+      st.online = true;
+      st.deviceStatus = 'Online';
+    }
     const isMati = isMatiStatus(st);
     const isTrouble =
-      st.online === true &&
+      !isMati &&
       !stale &&
-      st.internetStatus === 'Internet Trouble' &&
-      st.internetOnline === false;
+      (net.includes('internet trouble') || stt === 'trouble' ||
+        (st.internetStatus === 'Internet Trouble' && st.internetOnline === false));
     const isNormal =
       st.online === true &&
       !stale &&
@@ -123,12 +135,19 @@ async function syncAssetsStatus(db, monitorStatuses) {
   for (const st of monitorStatuses) {
     if (!st.id) continue;
     const stale = isStale(st);
+    const net = String(st.internetStatus || '').toLowerCase();
+    const stt = String(st.status || '').toLowerCase();
+    // Self-heal: trouble internet = perangkat masih online
+    if (net.includes('internet trouble') || stt === 'trouble') {
+      st.online = true;
+      st.deviceStatus = 'Online';
+    }
     const isMati = isMatiStatus(st);
     const isOnline = st.online === true && !stale;
     const isTrouble =
-      isOnline &&
-      st.internetStatus === 'Internet Trouble' &&
-      st.internetOnline === false;
+      !isMati &&
+      (net.includes('internet trouble') || stt === 'trouble' ||
+        (st.internetStatus === 'Internet Trouble' && st.internetOnline === false));
 
     const patch = {
       lastMonitorAt: now,
