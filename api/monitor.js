@@ -69,7 +69,8 @@ function computeAlerts(monitorStatuses) {
     const isTrouble =
       st.online === true &&
       !stale &&
-      (st.internetStatus === 'Internet Trouble' || st.internetOnline === false);
+      st.internetStatus === 'Internet Trouble' &&
+      st.internetOnline === false;
     const isNormal =
       st.online === true &&
       !stale &&
@@ -126,7 +127,8 @@ async function syncAssetsStatus(db, monitorStatuses) {
     const isOnline = st.online === true && !stale;
     const isTrouble =
       isOnline &&
-      (st.internetStatus === 'Internet Trouble' || st.internetOnline === false);
+      st.internetStatus === 'Internet Trouble' &&
+      st.internetOnline === false;
 
     const patch = {
       lastMonitorAt: now,
@@ -204,10 +206,10 @@ async function sendPushForAlerts(db, alerts) {
       notification: {
         title:
           alert.type === 'mati'
-            ? '🚨 Perangkat Mati Terdeteksi'
+            ? 'Perangkat Mati Terdeteksi'
             : alert.type === 'trouble'
-              ? '⚠️ Internet Trouble'
-              : '⏳ Tidak Ada Laporan Terbaru',
+              ? 'Internet Trouble'
+              : 'Tidak Ada Laporan Terbaru',
         body: `${alert.nama}: ${alert.reason}`
       },
       data: {
