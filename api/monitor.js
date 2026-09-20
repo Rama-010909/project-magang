@@ -141,10 +141,11 @@ async function syncAssetsStatus(db, monitorStatuses) {
       patch.statusLive = 'Offline';
       patch.online = false;
     } else if (isTrouble) {
+      // Perangkat tetap ONLINE — hanya internet yang bermasalah
       patch.statusLive = 'Online';
       patch.online = true;
+      patch.status = 'Aktif';
       patch.internetStatus = 'Internet Trouble';
-      if (st.status === 'Offline') patch.status = 'Aktif';
     } else if (isOnline) {
       patch.statusLive = 'Online';
       patch.online = true;
@@ -206,10 +207,10 @@ async function sendPushForAlerts(db, alerts) {
       notification: {
         title:
           alert.type === 'mati'
-            ? 'Perangkat Mati Terdeteksi'
+            ? 'MONITORING  |  Perangkat Offline'
             : alert.type === 'trouble'
-              ? 'Internet Trouble'
-              : 'Tidak Ada Laporan Terbaru',
+              ? 'MONITORING  |  Gangguan Internet'
+              : 'MONITORING  |  Data Tidak Diperbarui',
         body: `${alert.nama}: ${alert.reason}`
       },
       data: {
